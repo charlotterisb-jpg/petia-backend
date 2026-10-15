@@ -216,5 +216,53 @@ router.get('/me', async (req, res) => {
     return res.status(401).json({ message: 'Token invalide ou expiré.' });
   }
 });
+// POST /api/auth/register-fa
+router.post('/register-fa', async (req, res) => {
+  try {
+    const { email, password, prenom, nom, ville, code_postal, departement } = req.body;
+    if (!email || !password || !prenom || !nom || !ville || !code_postal || !departement)
+      return res.status(400).json({ message: 'Champs obligatoires manquants' });
 
+    const { data: existing } = await supabase
+      .from('familles_accueil').select('id').eq('email', email).single();
+    if (existing) return res.status(409).json({ message: 'Email déjà utilisé' });
+
+    const password_hash = await bcrypt.hash(password, 10);
+    const { data, error } = await supabase
+      .from('familles_accueil')
+      .insert({ email, password_hash, prenom, nom, ville, code_postal, departement })
+      .select().single();
+    if (error) throw error;
+
+    const token = makeToken({ id: data.id, role: 'fa' });
+    res.status(201).json({ token, famille: pickFields(data, FA_PUBLIC_FIELDS) });
+  } catch (e) {
+    res.status(500).json({ message: 'Erreur serveur', detail: e.message });
+  }
+});
+
+// POST /api/auth/register-refuge
+router.post('/register-refuge', async (req, res) => {
+  try {
+    const { email, password, nom, ville, code_postal, departement } = req.body;
+    if (!email || !password || !nom || !ville || !code_postal || !departement)
+      return res.status(400).json({ message: 'Champs obligatoires manquants' });
+
+    const { data: existing } = await supabase
+      .from('refuges').select('id').eq('email', email).single();
+    if (existing) return res.status(409).json({ message: 'Email déjà utilisé' });
+
+    const password_hash = await bcrypt.hash(password, 10);
+    const { data, error } = await supabase
+      .from('refuges')
+      .insert({ email, password_hash, nom, ville, code_postal, departement })
+      .select().single();
+    if (error) throw error;
+
+    const token = makeToken({ id: data.id, role: 'refuge' });
+    res.status(201).json({ token, refuge: data });
+  } catch (e) {
+    res.status(500).json({ message: 'Erreur serveur', detail: e.message });
+  }
+});
 module.exports = router;
