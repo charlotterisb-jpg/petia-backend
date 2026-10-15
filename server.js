@@ -21,6 +21,7 @@ app.use('/api/fourriere', require('./routes/fourriere'));
 app.use('/api/animal', require('./routes/animal'));
 app.use('/api/famille', require('./routes/famille'));
 app.use('/api/matching', require('./routes/matching'));
+app.use('/api/auth', require('./routes/auth'));
 
 app.listen(PORT, () => {
   console.log(`✅ PetIA API démarrée sur le port ${PORT}`);
