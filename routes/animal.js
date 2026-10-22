@@ -71,6 +71,23 @@ router.post('/', requireAuth, async (req, res) => {
     };
     const age = ageMap[age_categorie] || { annees: null, mois: null };
 
+    // Mapper espèce (libellé formulaire → valeur Supabase)
+    const especeMap = (v) => {
+      const e = (v || '').toLowerCase();
+      if (e === 'chien' || e === 'chat') return e;
+      if (e === 'lapin') return 'nac';
+      return 'autre';
+    };
+
+    // Mapper expérience FA (libellé formulaire → valeur Supabase)
+    const experienceMap = (v) => {
+      if (!v) return null;
+      if (v.includes('Débutant'))     return 'debutant';
+      if (v.includes('préférable'))   return 'intermediaire';
+      if (v.includes('expérimentée')) return 'confirme';
+      return null;
+    };
+
     // Mapper urgence (lettre → libellé Supabase)
     const urgenceMap = { 'n': 'normale', 'e': 'haute', 'c': 'critique' };
 
@@ -88,11 +105,11 @@ router.post('/', requireAuth, async (req, res) => {
       .insert({
         refuge_id:            refuge.id,
         nom,
-        espece:               espece.toLowerCase(),
+        espece:               especeMap(espece),
         race:                 race || null,
         age_annees:           age.annees,
         age_mois:             age.mois,
-        sexe:                 sexe ? (sexe === 'Mâle' ? 'male' : 'femelle') : 'inconnu',
+        sexe:                 sexe === 'Mâle' ? 'male' : sexe === 'Femelle' ? 'femelle' : 'inconnu',
         poids_kg:             poids_kg ? parseFloat(poids_kg) : null,
         sterilise:            sterilise === 'Oui' ? true : sterilise === 'Non' ? false : null,
         vaccins:              vaccins === 'À jour' ? true : vaccins === 'Non' ? false : null,
@@ -109,7 +126,7 @@ router.post('/', requireAuth, async (req, res) => {
         cloture_min:          cloture_min || null,
         sortie_sans_laisse:   sortie_sans_laisse || null,
         vehicule_requis:      vehicule_requis || null,
-        experience_fa_requise: experience_fa_requise || null,
+        experience_fa_requise: experienceMap(experience_fa_requise),
         description:          consignes || null,
         comportement:         comportementParts.join(' | ') || null,
         historique:           historique || null,
