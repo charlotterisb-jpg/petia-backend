@@ -99,15 +99,74 @@ router.post('/register-fa', async (req, res) => {
     try {
       await sendBrevoEmail({
         to: email,
-        subject: '🐾 Confirmez votre inscription PetIA',
+        subject: '🐾 Bienvenue sur PetIA — Confirmez votre compte',
         htmlContent: `
-          <div style="font-family:sans-serif;max-width:520px;margin:0 auto;padding:32px;background:#0f0f11;color:#e8e0ff;border-radius:16px;">
-            <h1 style="color:#ff7a59;font-size:24px;">Bienvenue sur PetIA, ${prenom} ! 🐾</h1>
-            <p style="color:#b0a8d0;">Votre compte famille d'accueil a bien été créé.</p>
-            <p style="color:#b0a8d0;">Pour confirmer votre email et activer votre compte, cliquez sur le bouton ci-dessous :</p>
-            <a href="https://petia-frontend.vercel.app" style="display:inline-block;margin:20px 0;padding:14px 28px;background:#7c3aed;color:#fff;border-radius:10px;text-decoration:none;font-weight:700;">Accéder à mon espace →</a>
-            <p style="color:#706888;font-size:12px;margin-top:32px;">Si vous n'avez pas créé ce compte, ignorez cet email.</p>
-          </div>
+<!DOCTYPE html>
+<html lang="fr">
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@400;600;700&display=swap" rel="stylesheet">
+</head>
+<body style="margin:0;padding:0;background:#0B1426;font-family:'Sora',Arial,sans-serif;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background:#0B1426;padding:40px 16px;">
+    <tr><td align="center">
+      <table width="100%" style="max-width:520px;background:#111E38;border-radius:20px;border:1px solid rgba(255,255,255,.08);overflow:hidden;">
+
+        <!-- Header -->
+        <tr>
+          <td style="background:linear-gradient(135deg,#0B1426 0%,#172444 100%);padding:32px 32px 24px;border-bottom:1px solid rgba(255,255,255,.08);">
+            <table cellpadding="0" cellspacing="0">
+              <tr>
+                <td style="width:44px;height:44px;background:#FF7A59;border-radius:11px;text-align:center;vertical-align:middle;box-shadow:0 0 18px rgba(255,122,89,.45);">
+                  <span style="font-size:22px;line-height:44px;">🐾</span>
+                </td>
+                <td style="padding-left:12px;">
+                  <span style="font-size:22px;font-weight:700;color:#fff;letter-spacing:-.4px;">Pet<span style="color:#FF7A59;">IA</span></span>
+                </td>
+              </tr>
+            </table>
+          </td>
+        </tr>
+
+        <!-- Body -->
+        <tr>
+          <td style="padding:36px 32px 28px;">
+            <p style="margin:0 0 8px;font-size:13px;font-weight:600;color:#FF7A59;text-transform:uppercase;letter-spacing:.08em;">Inscription famille d'accueil</p>
+            <h1 style="margin:0 0 16px;font-size:26px;font-weight:700;color:#fff;line-height:1.2;">Bienvenue chez PetIA,<br>${prenom} ! 🎉</h1>
+            <p style="margin:0 0 12px;font-size:15px;color:rgba(255,255,255,.6);line-height:1.7;">
+              Votre compte famille d'accueil a bien été créé. Plus qu'une étape : confirmez votre adresse email pour activer votre compte et commencer à accueillir des animaux.
+            </p>
+
+            <!-- CTA -->
+            <table cellpadding="0" cellspacing="0" style="margin:28px 0;">
+              <tr>
+                <td style="background:#FF7A59;border-radius:12px;box-shadow:0 4px 18px rgba(255,122,89,.4);">
+                  <a href="https://petia-frontend.vercel.app" style="display:inline-block;padding:15px 32px;color:#fff;font-size:15px;font-weight:700;text-decoration:none;letter-spacing:-.2px;">
+                    Confirmer mon compte →
+                  </a>
+                </td>
+              </tr>
+            </table>
+
+            <p style="margin:0;font-size:13px;color:rgba(255,255,255,.3);line-height:1.6;">
+              Le lien est valable 24 heures. Si vous n'avez pas créé ce compte, ignorez simplement cet email.
+            </p>
+          </td>
+        </tr>
+
+        <!-- Footer -->
+        <tr>
+          <td style="padding:20px 32px;border-top:1px solid rgba(255,255,255,.06);background:#0B1426;">
+            <p style="margin:0;font-size:12px;color:rgba(255,255,255,.25);text-align:center;">
+              PetIA — La plateforme de mise en relation entre animaux et familles d'accueil
+            </p>
+          </td>
+        </tr>
+
+      </table>
+    </td></tr>
+  </table>
+</body>
+</html>
         `
       });
     } catch (emailErr) {
@@ -162,15 +221,56 @@ router.post('/register-refuge', async (req, res) => {
     try {
       await sendBrevoEmail({
         to: email,
-        subject: '🐾 Confirmez votre inscription PetIA',
+        subject: '🐾 Bienvenue sur PetIA — Confirmez votre compte',
         htmlContent: `
-          <div style="font-family:sans-serif;max-width:520px;margin:0 auto;padding:32px;background:#0f0f11;color:#e8e0ff;border-radius:16px;">
-            <h1 style="color:#ff7a59;font-size:24px;">Bienvenue sur PetIA, ${nom} ! 🐾</h1>
-            <p style="color:#b0a8d0;">Votre compte refuge/fourrière a bien été créé.</p>
-            <p style="color:#b0a8d0;">Votre dossier est en cours de validation par notre équipe. Vous recevrez une confirmation sous 48h.</p>
-            <a href="https://petia-frontend.vercel.app" style="display:inline-block;margin:20px 0;padding:14px 28px;background:#7c3aed;color:#fff;border-radius:10px;text-decoration:none;font-weight:700;">Accéder à mon espace →</a>
-            <p style="color:#706888;font-size:12px;margin-top:32px;">Si vous n'avez pas créé ce compte, ignorez cet email.</p>
-          </div>
+<!DOCTYPE html>
+<html lang="fr">
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@400;600;700&display=swap" rel="stylesheet">
+</head>
+<body style="margin:0;padding:0;background:#0B1426;font-family:'Sora',Arial,sans-serif;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background:#0B1426;padding:40px 16px;">
+    <tr><td align="center">
+      <table width="100%" style="max-width:520px;background:#111E38;border-radius:20px;border:1px solid rgba(255,255,255,.08);overflow:hidden;">
+        <tr>
+          <td style="background:linear-gradient(135deg,#0B1426 0%,#172444 100%);padding:32px 32px 24px;border-bottom:1px solid rgba(255,255,255,.08);">
+            <table cellpadding="0" cellspacing="0"><tr>
+              <td style="width:44px;height:44px;background:#FF7A59;border-radius:11px;text-align:center;vertical-align:middle;box-shadow:0 0 18px rgba(255,122,89,.45);">
+                <span style="font-size:22px;line-height:44px;">🐾</span>
+              </td>
+              <td style="padding-left:12px;">
+                <span style="font-size:22px;font-weight:700;color:#fff;letter-spacing:-.4px;">Pet<span style="color:#FF7A59;">IA</span></span>
+              </td>
+            </tr></table>
+          </td>
+        </tr>
+        <tr>
+          <td style="padding:36px 32px 28px;">
+            <p style="margin:0 0 8px;font-size:13px;font-weight:600;color:#4F72F5;text-transform:uppercase;letter-spacing:.08em;">Inscription refuge / fourrière</p>
+            <h1 style="margin:0 0 16px;font-size:26px;font-weight:700;color:#fff;line-height:1.2;">Bienvenue chez PetIA,<br>${nom} ! 🎉</h1>
+            <p style="margin:0 0 12px;font-size:15px;color:rgba(255,255,255,.6);line-height:1.7;">
+              Votre compte a bien été créé. Votre dossier est en cours de validation par notre équipe — vous recevrez une confirmation sous 48h.
+            </p>
+            <table cellpadding="0" cellspacing="0" style="margin:28px 0;"><tr>
+              <td style="background:#4F72F5;border-radius:12px;box-shadow:0 4px 18px rgba(79,114,245,.4);">
+                <a href="https://petia-frontend.vercel.app" style="display:inline-block;padding:15px 32px;color:#fff;font-size:15px;font-weight:700;text-decoration:none;">
+                  Accéder à mon espace →
+                </a>
+              </td>
+            </tr></table>
+            <p style="margin:0;font-size:13px;color:rgba(255,255,255,.3);line-height:1.6;">Si vous n'avez pas créé ce compte, ignorez cet email.</p>
+          </td>
+        </tr>
+        <tr>
+          <td style="padding:20px 32px;border-top:1px solid rgba(255,255,255,.06);background:#0B1426;">
+            <p style="margin:0;font-size:12px;color:rgba(255,255,255,.25);text-align:center;">PetIA — La plateforme de mise en relation entre animaux et familles d'accueil</p>
+          </td>
+        </tr>
+      </table>
+    </td></tr>
+  </table>
+</body>
+</html>
         `
       });
     } catch (emailErr) {
