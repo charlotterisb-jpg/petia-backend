@@ -114,7 +114,7 @@ router.post('/register-fa', async (req, res) => {
         <!-- Header -->
         <tr>
           <td style="background:linear-gradient(135deg,#0B1426 0%,#172444 100%);padding:32px 32px 24px;border-bottom:1px solid rgba(255,255,255,.08);">
-            <img src="https://teeprkpfrmpyuymaxxqe.supabase.co/storage/v1/object/public/assets/petia_logo.png" alt="PetIA" width="120" style="display:block;height:auto;" />
+            <span style="font-size:26px;font-weight:700;color:#fff;font-family:'Sora',Arial,sans-serif;letter-spacing:-.4px;">Pet<span style="color:#FF7A59;">IA</span></span>
           </td>
         </tr>
 
@@ -225,7 +225,7 @@ router.post('/register-refuge', async (req, res) => {
       <table width="100%" style="max-width:520px;background:#111E38;border-radius:20px;border:1px solid rgba(255,255,255,.08);overflow:hidden;">
         <tr>
           <td style="background:linear-gradient(135deg,#0B1426 0%,#172444 100%);padding:32px 32px 24px;border-bottom:1px solid rgba(255,255,255,.08);">
-            <img src="https://teeprkpfrmpyuymaxxqe.supabase.co/storage/v1/object/public/assets/petia_logo.png" alt="PetIA" width="120" style="display:block;height:auto;" />
+            <span style="font-size:26px;font-weight:700;color:#fff;font-family:'Sora',Arial,sans-serif;letter-spacing:-.4px;">Pet<span style="color:#FF7A59;">IA</span></span>
           </td>
         </tr>
         <tr>
@@ -362,7 +362,7 @@ router.post('/reset-password', async (req, res) => {
           subject: '🔐 Réinitialisation de votre mot de passe PetIA',
           htmlContent: `
             <div style="font-family:sans-serif;max-width:520px;margin:0 auto;padding:32px;background:#0f0f11;color:#e8e0ff;border-radius:16px;">
-              <img src="https://teeprkpfrmpyuymaxxqe.supabase.co/storage/v1/object/public/assets/petia_logo.png" alt="PetIA" width="120" style="display:block;margin-bottom:24px;height:auto;" />
+              <span style="font-size:26px;font-weight:700;color:#fff;font-family:'Sora',Arial,sans-serif;letter-spacing:-.4px;display:block;margin-bottom:24px;">Pet<span style="color:#FF7A59;">IA</span></span>
               <h1 style="color:#FF7A59;font-size:24px;font-family:'Sora',Arial,sans-serif;">Réinitialisation du mot de passe 🔐</h1>
               <p style="color:rgba(255,255,255,.6);">Vous avez demandé à réinitialiser votre mot de passe PetIA.</p>
               <p style="color:rgba(255,255,255,.6);">Cliquez sur le bouton ci-dessous (valable 1 heure) :</p>
