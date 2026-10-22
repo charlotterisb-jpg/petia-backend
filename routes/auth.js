@@ -114,16 +114,7 @@ router.post('/register-fa', async (req, res) => {
         <!-- Header -->
         <tr>
           <td style="background:linear-gradient(135deg,#0B1426 0%,#172444 100%);padding:32px 32px 24px;border-bottom:1px solid rgba(255,255,255,.08);">
-            <table cellpadding="0" cellspacing="0">
-              <tr>
-                <td style="width:44px;height:44px;background:#FF7A59;border-radius:11px;text-align:center;vertical-align:middle;box-shadow:0 0 18px rgba(255,122,89,.45);">
-                  <span style="font-size:22px;line-height:44px;">🐾</span>
-                </td>
-                <td style="padding-left:12px;">
-                  <span style="font-size:22px;font-weight:700;color:#fff;letter-spacing:-.4px;">Pet<span style="color:#FF7A59;">IA</span></span>
-                </td>
-              </tr>
-            </table>
+            <img src="https://teeprkpfrmpyuymaxxqe.supabase.co/storage/v1/object/public/assets/petia_logo.png" alt="PetIA" width="120" style="display:block;height:auto;" />
           </td>
         </tr>
 
@@ -234,14 +225,7 @@ router.post('/register-refuge', async (req, res) => {
       <table width="100%" style="max-width:520px;background:#111E38;border-radius:20px;border:1px solid rgba(255,255,255,.08);overflow:hidden;">
         <tr>
           <td style="background:linear-gradient(135deg,#0B1426 0%,#172444 100%);padding:32px 32px 24px;border-bottom:1px solid rgba(255,255,255,.08);">
-            <table cellpadding="0" cellspacing="0"><tr>
-              <td style="width:44px;height:44px;background:#FF7A59;border-radius:11px;text-align:center;vertical-align:middle;box-shadow:0 0 18px rgba(255,122,89,.45);">
-                <span style="font-size:22px;line-height:44px;">🐾</span>
-              </td>
-              <td style="padding-left:12px;">
-                <span style="font-size:22px;font-weight:700;color:#fff;letter-spacing:-.4px;">Pet<span style="color:#FF7A59;">IA</span></span>
-              </td>
-            </tr></table>
+            <img src="https://teeprkpfrmpyuymaxxqe.supabase.co/storage/v1/object/public/assets/petia_logo.png" alt="PetIA" width="120" style="display:block;height:auto;" />
           </td>
         </tr>
         <tr>
@@ -378,11 +362,12 @@ router.post('/reset-password', async (req, res) => {
           subject: '🔐 Réinitialisation de votre mot de passe PetIA',
           htmlContent: `
             <div style="font-family:sans-serif;max-width:520px;margin:0 auto;padding:32px;background:#0f0f11;color:#e8e0ff;border-radius:16px;">
-              <h1 style="color:#ff7a59;font-size:24px;">Réinitialisation du mot de passe 🔐</h1>
-              <p style="color:#b0a8d0;">Vous avez demandé à réinitialiser votre mot de passe PetIA.</p>
-              <p style="color:#b0a8d0;">Cliquez sur le bouton ci-dessous (valable 1 heure) :</p>
-              <a href="${data.properties.action_link}" style="display:inline-block;margin:20px 0;padding:14px 28px;background:#7c3aed;color:#fff;border-radius:10px;text-decoration:none;font-weight:700;">Réinitialiser mon mot de passe →</a>
-              <p style="color:#706888;font-size:12px;margin-top:32px;">Si vous n'avez pas fait cette demande, ignorez cet email.</p>
+              <img src="https://teeprkpfrmpyuymaxxqe.supabase.co/storage/v1/object/public/assets/petia_logo.png" alt="PetIA" width="120" style="display:block;margin-bottom:24px;height:auto;" />
+              <h1 style="color:#FF7A59;font-size:24px;font-family:'Sora',Arial,sans-serif;">Réinitialisation du mot de passe 🔐</h1>
+              <p style="color:rgba(255,255,255,.6);">Vous avez demandé à réinitialiser votre mot de passe PetIA.</p>
+              <p style="color:rgba(255,255,255,.6);">Cliquez sur le bouton ci-dessous (valable 1 heure) :</p>
+              <a href="${data.properties.action_link}" style="display:inline-block;margin:20px 0;padding:15px 32px;background:#FF7A59;color:#fff;border-radius:12px;text-decoration:none;font-weight:700;font-family:'Sora',Arial,sans-serif;box-shadow:0 4px 18px rgba(255,122,89,.4);">Réinitialiser mon mot de passe →</a>
+              <p style="color:rgba(255,255,255,.3);font-size:12px;margin-top:32px;">Si vous n'avez pas fait cette demande, ignorez cet email.</p>
             </div>
           `
         });
