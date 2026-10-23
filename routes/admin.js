@@ -27,7 +27,7 @@ const sansSecrets = (f) => {
 const COLONNES_LISTE =
   'id, prenom, nom, email, ville, code_postal, type_logement, jardin, nb_adultes, enfants, ' +
   'animaux_actuels, heures_seul, presence_journee, experience_chien, nb_accueils, disponible_le, ' +
-  'peut_accueillir, statut_dossier, email_verifie, previsitee, decision_motif, decision_date, created_at';
+  'peut_accueillir, nac_acceptes, statut_dossier, email_verifie, previsitee, decision_motif, decision_date, created_at';
 
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
