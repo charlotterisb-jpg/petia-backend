@@ -8,6 +8,7 @@ const { createClient } = require('@supabase/supabase-js');
 const { requireAdmin } = require('../middleware/admin');
 const { requireUser, clientEphemere, facteursActifs, gotrue, verifierCode } = require('../middleware/session');
 const { nettoyerProfil, creerJetonInscription } = require('../services/profilFA');
+const { nettoyerRefuge, siretValide, esc } = require('../services/refuge');
 
 const supabase = createClient(
   process.env.SUPABASE_URL,
@@ -152,7 +153,7 @@ router.post('/register-fa', async (req, res) => {
         htmlContent: buildEmail({
           badge: '🐾', badgeColor: '#FF7A59',
           label: "Inscription famille d'accueil", labelColor: '#FF7A59',
-          title: `Bienvenue chez PetIA,<br>${prenom} !`,
+          title: `Bienvenue chez PetIA,<br>${esc(prenom)} !`,
           body: "Votre compte famille d'accueil a bien été créé. Plus qu'une étape : confirmez votre adresse email pour activer votre compte et commencer à accueillir des animaux.",
           ctaText: 'Confirmer mon compte →',
           ctaHref: 'https://petia-frontend.vercel.app',
@@ -183,6 +184,9 @@ router.post('/register-refuge', async (req, res) => {
     const { email, password, nom, ville, code_postal, departement } = req.body;
     if (!email || !password || !nom || !ville || !code_postal || !departement)
       return res.status(400).json({ message: 'Champs obligatoires manquants' });
+    const infos = nettoyerRefuge(req.body);
+    if (req.body.siret && String(req.body.siret).trim() && !(infos.siret && siretValide(infos.siret)))
+      return res.status(400).json({ message: 'Numéro SIRET invalide : vérifiez les 14 chiffres.' });
 
     const { data: authData, error: authError } = await clientEphemere().auth.signUp({
       email,
@@ -204,6 +208,9 @@ router.post('/register-refuge', async (req, res) => {
       .insert({
         id: authData.user.id,
         email, nom, ville, code_postal, departement,
+        ...infos,
+        // Validation par l'équipe PetIA obligatoire avant de publier des animaux
+        statut: 'en_attente',
         password_hash: 'supabase_auth'
       })
       .select()
@@ -218,7 +225,7 @@ router.post('/register-refuge', async (req, res) => {
         htmlContent: buildEmail({
           badge: '🏠', badgeColor: '#4F72F5',
           label: 'Inscription refuge / fourrière', labelColor: '#4F72F5',
-          title: `Bienvenue chez PetIA,<br>${nom} !`,
+          title: `Bienvenue chez PetIA,<br>${esc(nom)} !`,
           body: "Votre compte a bien été créé. Votre dossier est en cours de validation par notre équipe — vous recevrez une confirmation sous <strong style=\"color:#fff;\">48h</strong>.",
           ctaText: 'Accéder à mon espace →',
           ctaHref: 'https://petia-frontend.vercel.app',
@@ -303,6 +310,8 @@ router.post('/login-fourriere', async (req, res) => {
 
     if (refuge.statut === 'suspendu')
       return res.status(403).json({ message: 'Votre compte a été suspendu.' });
+    if (refuge.statut === 'refuse')
+      return res.status(403).json({ message: 'Votre inscription n\'a pas été retenue' + (refuge.decision_motif ? ' : ' + refuge.decision_motif.replace(/[.\s]+$/, '') + '.' : '.') + ' Contactez-nous pour en savoir plus.' });
 
     if (facteursActifs(authData.user).length)
       return res.json({ mfa_required: true, ticket: authData.session.access_token });

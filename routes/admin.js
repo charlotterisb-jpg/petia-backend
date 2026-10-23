@@ -161,13 +161,91 @@ async function notifierFamille(f, statut, motif) {
   });
 }
 
-async function relancerMatchingAnimauxDisponibles() {
+async function relancerMatchingAnimauxDisponibles(refugeId) {
   const { lancerMatching } = require('./matching');
-  const { data: animaux } = await supabaseAdmin.from('animaux').select('*')
-    .eq('statut', 'disponible').order('created_at', { ascending: false }).limit(20);
+  let q = supabaseAdmin.from('animaux').select('*').eq('statut', 'disponible');
+  if (refugeId) q = q.eq('refuge_id', refugeId);
+  const { data: animaux } = await q.order('created_at', { ascending: false }).limit(20);
   for (const a of animaux || []) {
     await lancerMatching(a).catch(e => console.error('Rematch animal', a.id, e.message));
   }
+}
+
+// ═══ REFUGES ═════════════════════════════════════════════════════════════════
+const STATUTS_REFUGE = ['en_attente', 'actif', 'refuse', 'suspendu'];
+const COLONNES_REFUGE =
+  'id, nom, email, telephone, type_structure, siret, adresse, code_postal, ville, departement, site_web, ' +
+  'contact_prenom, contact_nom, contact_fonction, especes, details, statut, email_verifie, ' +
+  'decision_motif, decision_date, created_at';
+
+router.get('/refuges', requireAdmin, async (req, res) => {
+  try {
+    const { siretValide } = require('../services/refuge');
+    const statut = STATUTS_REFUGE.includes(req.query.statut) ? req.query.statut : 'en_attente';
+    const [{ data: liste, error }, { data: tous, error: e2 }, { data: nbAnimaux }] = await Promise.all([
+      supabaseAdmin.from('refuges').select(COLONNES_REFUGE).eq('statut', statut).order('created_at', { ascending: statut === 'en_attente' }),
+      supabaseAdmin.from('refuges').select('statut'),
+      supabaseAdmin.from('animaux').select('refuge_id'),
+    ]);
+    if (error || e2) throw error || e2;
+    const compteurs = Object.fromEntries(STATUTS_REFUGE.map(s => [s, 0]));
+    (tous || []).forEach(r => { compteurs[r.statut] = (compteurs[r.statut] || 0) + 1; });
+    const animauxPar = {};
+    (nbAnimaux || []).forEach(a => { animauxPar[a.refuge_id] = (animauxPar[a.refuge_id] || 0) + 1; });
+    const refuges = (liste || []).map(r => ({ ...r, siret_valide: r.siret ? siretValide(r.siret) : null, nb_animaux: animauxPar[r.id] || 0 }));
+    return res.json({ statut, refuges, compteurs });
+  } catch (e) {
+    console.error('GET /admin/refuges error:', e);
+    return res.status(500).json({ message: 'Erreur serveur.' });
+  }
+});
+
+router.patch('/refuges/:id', requireAdmin, async (req, res) => {
+  try {
+    const { statut, motif, notes_internes, notifier = true } = req.body || {};
+    const maj = { updated_at: new Date().toISOString() };
+    if (statut !== undefined) {
+      if (!STATUTS_REFUGE.includes(statut)) return res.status(400).json({ message: 'Statut invalide.' });
+      if (['refuse', 'suspendu'].includes(statut) && !String(motif || '').trim())
+        return res.status(400).json({ message: 'Un motif est requis pour refuser ou suspendre un refuge.' });
+      Object.assign(maj, { statut, decision_motif: motif ? String(motif).slice(0, 1000) : null,
+                           decision_date: new Date().toISOString(), decision_par: req.user.id });
+    }
+    if (notes_internes !== undefined) maj.notes_internes = String(notes_internes).slice(0, 4000);
+    const { data: r, error } = await supabaseAdmin.from('refuges').update(maj).eq('id', req.params.id).select(COLONNES_REFUGE).single();
+    if (error || !r) return res.status(404).json({ message: 'Refuge introuvable.' });
+
+    let email = null;
+    if (statut && notifier && ['actif', 'refuse', 'suspendu'].includes(statut))
+      email = await notifierRefuge(r, statut, motif).then(() => 'envoye').catch(err => {
+        console.error('Email décision refuge (non-bloquant):', err.message); return 'echec';
+      });
+    // Refuge validé : ses animaux disponibles reçoivent des propositions
+    if (statut === 'actif') relancerMatchingAnimauxDisponibles(r.id).catch(e => console.error('Rematch refuge:', e));
+    return res.json({ message: 'Refuge mis à jour.', refuge: r, email });
+  } catch (e) {
+    console.error('PATCH /admin/refuges error:', e);
+    return res.status(500).json({ message: 'Erreur serveur.' });
+  }
+});
+
+async function notifierRefuge(r, statut, motif) {
+  const { buildEmail, sendBrevoEmail } = require('./auth').mail;
+  const nom = esc(r.nom || '');
+  const c = {
+    actif: { subject: '🎉 Votre structure est validée sur PetIA', color: '#4F72F5', badge: '🎉', label: 'Dossier validé',
+             title: `Félicitations, ${nom} !`, body: 'Votre structure est validée. Vous pouvez dès maintenant publier vos animaux et recevoir des propositions de familles d\'accueil.',
+             cta: 'Publier mes animaux →', href: 'https://petia-frontend.vercel.app' },
+    refuse: { subject: 'Votre inscription PetIA', color: '#FF7A59', badge: '📋', label: 'Inscription non retenue',
+              title: `Votre dossier, ${nom}`, body: `Après examen, nous ne pouvons pas valider votre inscription : <strong style="color:#fff;">${esc(motif)}</strong>. N'hésitez pas à nous contacter.`,
+              cta: 'Nous contacter →', href: 'mailto:contact@petia.fr' },
+    suspendu: { subject: 'Votre compte PetIA est suspendu', color: '#EF4444', badge: '⏸', label: 'Compte suspendu',
+                title: `Votre compte, ${nom}`, body: `Votre compte est suspendu : <strong style="color:#fff;">${esc(motif)}</strong>. Contactez-nous pour en savoir plus.`,
+                cta: 'Nous contacter →', href: 'mailto:contact@petia.fr' },
+  }[statut];
+  await sendBrevoEmail({ to: r.email, subject: c.subject, htmlContent: buildEmail({
+    badge: c.badge, badgeColor: c.color, label: c.label, labelColor: c.color, title: c.title, body: c.body,
+    ctaText: c.cta, ctaHref: c.href, ctaColor: c.color, ctaShadow: 'rgba(0,0,0,.3)', footer: "L'équipe PetIA 🐾" }) });
 }
 
 module.exports = router;

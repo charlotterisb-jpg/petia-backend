@@ -28,8 +28,11 @@ router.post('/', requireAuth, async (req, res) => {
     if (refugeErr || !refuge)
       return res.status(403).json({ message: 'Accès réservé aux refuges et fourrières.' });
 
-    if (refuge.statut === 'suspendu')
-      return res.status(403).json({ message: 'Compte suspendu.' });
+    // Seul un refuge validé par l'équipe PetIA peut publier des animaux
+    if (refuge.statut !== 'actif')
+      return res.status(403).json({ message: refuge.statut === 'en_attente'
+        ? 'Votre structure est en cours de validation par l\'équipe PetIA. Vous pourrez publier des animaux dès qu\'elle sera validée.'
+        : 'Votre compte ne permet pas de publier des animaux.' });
 
     const {
       nom, espece, race, sous_espece, details,

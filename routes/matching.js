@@ -53,6 +53,11 @@ async function listerMatchs(animalId) {
 
 // ─── Moteur : calcule et enregistre les matchs d'un animal ───────────────────
 async function lancerMatching(animal) {
+  // Pas de proposition pour l'animal d'un refuge non validé
+  const { data: refuge } = await supabase.from('refuges').select('statut').eq('id', animal.refuge_id).maybeSingle();
+  if (refuge?.statut !== 'actif')
+    return { familles_validees: 0, exclues_par_regles: 0, eligibles: 0, ia_utilisee: false, refuge_non_valide: true };
+
   const { data: familles, error } = await supabase
     .from('familles_accueil')
     .select(COLONNES_FAMILLE_MATCHING)

@@ -96,7 +96,7 @@ const COLONNES_ANIMAL_FA =
   'id, nom, espece, sous_espece, race, age_annees, age_mois, sexe, poids_kg, sterilise, urgence, statut, ' +
   'compatible_enfants, compatible_chiens, compatible_chats, temps_seul_max, balades_min_jour, niveau_exercice, ' +
   'description, comportement, historique, besoins_specifiques, details, photo_url, ' +
-  'refuge:refuges(nom, ville, code_postal, telephone, email)';
+  'refuge:refuges(nom, ville, code_postal, telephone, email, statut)';
 
 // ─── GET /api/fa/propositions ────────────────────────────────────────────────
 // Uniquement les propositions validées par le refuge (et la suite de l'accueil)
@@ -110,7 +110,9 @@ router.get('/propositions', requireFamille, async (req, res) => {
       .in('statut', ['accepte', 'en_cours', 'termine'])
       .order('updated_at', { ascending: false });
     if (error) throw error;
-    const propositions = (data || []).map(m => {
+    // Les animaux d'un refuge suspendu ou refusé n'apparaissent plus
+    const propositions = (data || []).filter(m => m.animal?.refuge?.statut === 'actif').map(m => {
+      if (m.animal?.refuge) delete m.animal.refuge.statut;
       if (m.animal?.details?.commun) {
         const { puce, ...commun } = m.animal.details.commun;
         m.animal.details = { ...m.animal.details, commun };
