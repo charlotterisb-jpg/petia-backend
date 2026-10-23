@@ -137,6 +137,10 @@ router.post('/', requireAuth, async (req, res) => {
 
     if (error) throw error;
 
+    // Matching lancé en arrière-plan : la réponse n'attend pas l'IA
+    require('./matching').lancerMatching(data)
+      .catch(e => console.error('Matching auto error:', e));
+
     return res.status(201).json({
       message: 'Animal enregistré avec succès.',
       animal: data
@@ -153,7 +157,7 @@ router.get('/', requireAuth, async (req, res) => {
   try {
     const { data, error } = await supabaseAdmin
       .from('animaux')
-      .select('*')
+      .select('*, matchs(score, statut)')
       .eq('refuge_id', req.user.id)
       .order('created_at', { ascending: false });
 
