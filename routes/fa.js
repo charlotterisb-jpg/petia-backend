@@ -104,7 +104,7 @@ router.get('/propositions', requireFamille, async (req, res) => {
   try {
     const { data, error } = await supabaseAdmin
       .from('matchs')
-      .select(`id, score, recommandation, statut, reponse_fa, date_reponse_fa, created_at, updated_at, details_score,
+      .select(`id, score, recommandation, statut, reponse_fa, date_reponse_fa, date_debut_accueil, date_fin_accueil, created_at, updated_at, details_score,
                animal:animaux(${COLONNES_ANIMAL_FA})`)
       .eq('famille_id', req.famId)
       .in('statut', ['accepte', 'en_cours', 'termine'])
