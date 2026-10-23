@@ -5,6 +5,7 @@
 const express = require('express');
 const router  = express.Router();
 const { createClient } = require('@supabase/supabase-js');
+const { requireAdmin } = require('../middleware/admin');
 
 const supabase = createClient(
   process.env.SUPABASE_URL,
@@ -403,7 +404,7 @@ router.post('/password-changed', async (req, res) => {
 
 // ─── POST /api/auth/refuge-validated ──────────────────────────────────────────
 // À appeler depuis le dashboard admin quand un dossier refuge est validé
-router.post('/refuge-validated', async (req, res) => {
+router.post('/refuge-validated', requireAdmin, async (req, res) => {
   const { email, nom } = req.body;
   if (!email || !nom) return res.status(400).json({ message: 'Email et nom requis.' });
 
@@ -431,7 +432,7 @@ router.post('/refuge-validated', async (req, res) => {
 
 // ─── POST /api/auth/refuge-rejected ───────────────────────────────────────────
 // À appeler depuis le dashboard admin quand un dossier refuge est refusé
-router.post('/refuge-rejected', async (req, res) => {
+router.post('/refuge-rejected', requireAdmin, async (req, res) => {
   const { email, nom, raison } = req.body;
   if (!email || !nom) return res.status(400).json({ message: 'Email et nom requis.' });
 
@@ -465,3 +466,4 @@ router.post('/logout', async (req, res) => {
 });
 
 module.exports = router;
+module.exports.mail = { buildEmail, sendBrevoEmail };
