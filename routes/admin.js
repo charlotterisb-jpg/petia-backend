@@ -1,15 +1,16 @@
 // petia-backend/routes/admin.js
 // Espace admin PetIA — validation des dossiers familles d'accueil
-//   POST  /api/admin/login              → connexion (compte présent dans public.admins)
+//   GET   /api/admin/moi                → le compte connecté est-il admin ? (sans MFA)
 //   GET   /api/admin/familles?statut=…  → liste + compteurs par statut
 //   GET   /api/admin/familles/:id       → dossier complet
 //   PATCH /api/admin/familles/:id       → { statut, motif?, notes_internes?, notifier? }
-// Variables d'env : SUPABASE_URL, SUPABASE_ANON_KEY, SUPABASE_SERVICE_KEY
+// Variables d'env : SUPABASE_URL, SUPABASE_SERVICE_KEY
+// Toutes les routes sauf /moi exigent la double authentification (aal2).
 
 const express = require('express');
 const router = express.Router();
 const { createClient } = require('@supabase/supabase-js');
-const { requireAdmin, estAdmin } = require('../middleware/admin');
+const { requireAdmin, requireAdminSansMFA } = require('../middleware/admin');
 
 const supabaseAdmin = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_KEY);
 
@@ -30,23 +31,12 @@ const COLONNES_LISTE =
 
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
-// ─── Connexion ───────────────────────────────────────────────────────────────
-router.post('/login', async (req, res) => {
-  const { email, password } = req.body || {};
-  if (!email || !password) return res.status(400).json({ message: 'Email et mot de passe requis.' });
-  try {
-    // Client éphémère : la session de connexion ne doit pas être partagée entre requêtes
-    const client = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_ANON_KEY, {
-      auth: { persistSession: false, autoRefreshToken: false },
-    });
-    const { data, error } = await client.auth.signInWithPassword({ email, password });
-    if (error || !data?.session) return res.status(401).json({ message: 'Email ou mot de passe incorrect.' });
-    if (!(await estAdmin(data.user.id))) return res.status(403).json({ message: 'Accès réservé aux administrateurs.' });
-    return res.json({ token: data.session.access_token, admin: { email: data.user.email } });
-  } catch (e) {
-    console.error('admin login error:', e);
-    return res.status(500).json({ message: 'Erreur serveur.' });
-  }
+// ─── Vérification du compte (avant la double authentification) ─────────────
+// La connexion se fait directement auprès de Supabase depuis le site admin
+// (mot de passe puis code Google Authenticator). Cette route permet seulement
+// de vérifier qu'un compte est admin avant de lui proposer de configurer son code.
+router.get('/moi', requireAdminSansMFA, (req, res) => {
+  res.json({ admin: true, email: req.user.email, mfa: req.aal === 'aal2' });
 });
 
 // ─── Liste des dossiers ──────────────────────────────────────────────────────
