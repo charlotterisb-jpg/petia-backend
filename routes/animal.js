@@ -13,6 +13,7 @@ const supabaseAdmin = createClient(
 
 // Session : contrôle commun (exige le code si la double authentification est activée)
 const requireAuth = require('../middleware/session').requireUser;
+const { ESPECES, SOUS_ESPECES, nettoyerDetailsAnimal } = require('../services/especes');
 
 // ─── POST /api/animal — Ajouter un animal ─────────────────────────────────────
 router.post('/', requireAuth, async (req, res) => {
@@ -31,8 +32,8 @@ router.post('/', requireAuth, async (req, res) => {
       return res.status(403).json({ message: 'Compte suspendu.' });
 
     const {
-      nom, espece, race,
-      age_categorie, sexe, poids_kg, sterilise, vaccins,
+      nom, espece, race, sous_espece, details,
+      age_categorie, age_annees, age_mois, sexe, poids_kg, sterilise, vaccins,
       urgence, date_limite, duree_accueil,
       etat_sante, medicaments, historique, consignes,
       energie, proprete, destruction, anxiete,
@@ -49,6 +50,19 @@ router.post('/', requireAuth, async (req, res) => {
     if (!nom || !espece || !urgence)
       return res.status(400).json({ message: 'Nom, espèce et urgence sont obligatoires.' });
 
+    // Espèce : uniquement les espèces ouvertes à la saisie
+    const esp = String(espece).toLowerCase();
+    if (!ESPECES.includes(esp))
+      return res.status(400).json({ message: 'Espèce non prise en charge pour le moment.' });
+    const sousEsp = SOUS_ESPECES[esp] ? (SOUS_ESPECES[esp].includes(sous_espece) ? sous_espece : null) : null;
+    if (SOUS_ESPECES[esp] && !sousEsp)
+      return res.status(400).json({ message: 'Précisez la sous-espèce.' });
+    const estChien = esp === 'chien';
+    const estChienOuChat = esp === 'chien' || esp === 'chat';
+
+    // Âge : années / mois saisis directement (ancien format par catégorie accepté)
+    const entier = (v, max) => { const n = parseInt(v, 10); return Number.isFinite(n) && n >= 0 && n <= max ? n : null; };
+
     // Mapper l'âge catégorie → valeur numérique approximative
     const ageMap = {
       'Chiot (0–6 mois)':   { annees: 0, mois: 3 },
@@ -57,15 +71,9 @@ router.post('/', requireAuth, async (req, res) => {
       'Senior (7–10 ans)':  { annees: 8, mois: 0 },
       'Très âgé (10+)':     { annees: 11, mois: 0 }
     };
-    const age = ageMap[age_categorie] || { annees: null, mois: null };
-
-    // Mapper espèce (libellé formulaire → valeur Supabase)
-    const especeMap = (v) => {
-      const e = (v || '').toLowerCase();
-      if (e === 'chien' || e === 'chat') return e;
-      if (e === 'lapin') return 'nac';
-      return 'autre';
-    };
+    const age = (age_annees != null || age_mois != null)
+      ? { annees: entier(age_annees, 40) ?? 0, mois: entier(age_mois, 11) ?? 0 }
+      : (ageMap[age_categorie] || { annees: null, mois: null });
 
     // Mapper expérience FA (libellé formulaire → valeur Supabase)
     const experienceMap = (v) => {
@@ -93,7 +101,9 @@ router.post('/', requireAuth, async (req, res) => {
       .insert({
         refuge_id:            refuge.id,
         nom,
-        espece:               especeMap(espece),
+        espece:               esp,
+        sous_espece:          sousEsp,
+        details:              nettoyerDetailsAnimal(esp, details || {}),
         race:                 race || null,
         age_annees:           age.annees,
         age_mois:             age.mois,
@@ -103,16 +113,19 @@ router.post('/', requireAuth, async (req, res) => {
         vaccins:              vaccins === 'À jour' ? true : vaccins === 'Non' ? false : null,
         urgence:              urgenceMap[urgence] || 'normale',
         statut:               'disponible',
-        compatible_enfants:   compat(compat_enfants_3) ?? compat(compat_enfants_312),
+        // Un seul « non » suffit : l'animal n'est pas compatible avec des enfants
+        compatible_enfants:   [compat(compat_enfants_3), compat(compat_enfants_312)].includes(false) ? false
+                            : [compat(compat_enfants_3), compat(compat_enfants_312)].includes(true) ? true : null,
         compatible_chiens:    compat(compat_chiens),
         compatible_chats:     compat(compat_chats),
-        temps_seul_max:       temps_seul_max || null,
-        presence_constante:   presence_constante || null,
-        balades_min_jour:     balades_min_jour || null,
-        niveau_exercice:      niveau_exercice || null,
-        escaliers:            escaliers || null,
-        cloture_min:          cloture_min || null,
-        sortie_sans_laisse:   sortie_sans_laisse || null,
+        // Questions réservées au chien (ou au chien et au chat)
+        temps_seul_max:       estChienOuChat ? temps_seul_max || null : null,
+        presence_constante:   estChienOuChat ? presence_constante || null : null,
+        balades_min_jour:     estChien ? balades_min_jour || null : null,
+        niveau_exercice:      estChien ? niveau_exercice || null : null,
+        escaliers:            estChien ? escaliers || null : null,
+        cloture_min:          estChien ? cloture_min || null : null,
+        sortie_sans_laisse:   estChien ? sortie_sans_laisse || null : null,
         vehicule_requis:      vehicule_requis || null,
         experience_fa_requise: experienceMap(experience_fa_requise),
         description:          consignes || null,

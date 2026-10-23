@@ -3,6 +3,7 @@
 // liste blanche des champs, valeurs contrôlées, textes bornés.
 
 const crypto = require('crypto');
+const { ESPECES, SOUS_ESPECES } = require('./especes');
 
 const ENUMS = {
   type_logement: ['maison', 'appartement', 'autre'],
@@ -56,11 +57,47 @@ function nettoyerQuestionnaire(b = {}) {
   for (const k of ['experiences_gerees', 'refus']) {
     if (Array.isArray(b[k])) out[k] = [...new Set(b[k].filter(v => LISTES[k].includes(v)))];
   }
+  // Espèces accueillies
+  if (Array.isArray(b.peut_accueillir)) out.peut_accueillir = [...new Set(b.peut_accueillir.filter(v => ESPECES.includes(v)))];
+  if (Array.isArray(b.nac_acceptes)) out.nac_acceptes = [...new Set(b.nac_acceptes.filter(v => SOUS_ESPECES.nac.includes(v)))];
+  if (b.criteres_especes && typeof b.criteres_especes === 'object') out.criteres_especes = nettoyerCriteres(b.criteres_especes);
+
   const eng = parseInt(b.engagement, 10);
   if (b.engagement !== undefined) out.engagement = eng >= 1 && eng <= 10 ? eng : null;
   if (b.questionnaire && typeof b.questionnaire === 'object' && !Array.isArray(b.questionnaire)) {
     const json = JSON.stringify(b.questionnaire);
     if (json.length <= 60000) out.questionnaire = b.questionnaire;
+  }
+  return out;
+}
+
+// Critères propres au chat et aux NAC
+const CRITERES = {
+  chat: {
+    experience: ['jamais', 'enfance', '1_2_ans', '3_5_ans'], securise: ['oui', 'installable', 'non'], exterieur: ['oui', 'non'],
+    gerees: { liste: ['biberon', 'craintif', 'fiv', 'age_malade', 'malpropre'] },
+    refus: { liste: ['biberon', 'age', 'fiv', 'craintif', 'malpropre', 'exterieur'] },
+    situation_litiere: 'texte', situation_cache: 'texte',
+  },
+  nac: {
+    experience: ['aucune', 'debutant', 'confirme'], groupe: ['oui', 'non'],
+    installations: { liste: ['cage', 'grand_enclos', 'enclos_exterieur', 'terrarium', 'voliere', 'liberte'] },
+    situation_urgence: 'texte', situation_predateur: 'texte',
+  },
+};
+function nettoyerCriteres(c) {
+  const out = {};
+  for (const [esp, schema] of Object.entries(CRITERES)) {
+    if (!c[esp] || typeof c[esp] !== 'object') continue;
+    const bloc = {};
+    for (const [k, type] of Object.entries(schema)) {
+      const v = c[esp][k];
+      if (v == null || v === '') continue;
+      if (type === 'texte' && typeof v === 'string') bloc[k] = v.trim().slice(0, 3000);
+      else if (type.liste && Array.isArray(v)) bloc[k] = [...new Set(v.filter(x => type.liste.includes(x)))];
+      else if (Array.isArray(type) && type.includes(v)) bloc[k] = v;
+    }
+    out[esp] = bloc;
   }
   return out;
 }

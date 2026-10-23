@@ -26,6 +26,8 @@ router.put('/questionnaire', identifierFamille, async (req, res) => {
     if (!fa) return res.status(404).json({ message: 'Profil famille introuvable.' });
 
     const maj = { ...nettoyerProfil(req.body.profil || {}), ...nettoyerQuestionnaire(req.body) };
+    if (!maj.peut_accueillir?.length)
+      return res.status(400).json({ message: 'Indiquez quels animaux vous pouvez accueillir.' });
     if (!maj.motivation)
       return res.status(400).json({ message: 'La question « Pourquoi souhaitez-vous devenir FA ? » est obligatoire.' });
 

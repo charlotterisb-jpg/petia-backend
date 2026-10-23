@@ -20,9 +20,27 @@ const contient = (liste, mot) =>
 
 const nonVide = (liste) => Array.isArray(liste) && liste.filter(Boolean).length > 0;
 
-function experienceFamille(f) {
-  return Math.max(EXPERIENCE_CHIEN[f.experience_chien] ?? 0, (f.nb_accueils || 0) > 0 ? 3 : 0);
+// Expérience de la famille POUR L'ESPÈCE de l'animal (0 à 4)
+const EXPERIENCE_CHAT = { jamais: 0, enfance: 1, '1_2_ans': 2, '3_5_ans': 3 };
+const EXPERIENCE_NAC = { aucune: 0, debutant: 2, confirme: 3 };
+function experienceFamille(f, espece = 'chien') {
+  const c = f.criteres_especes || {};
+  const propre = espece === 'chat' ? EXPERIENCE_CHAT[c.chat?.experience]
+               : espece === 'nac' ? EXPERIENCE_NAC[c.nac?.experience]
+               : EXPERIENCE_CHIEN[f.experience_chien];
+  return Math.max(propre ?? 0, (f.nb_accueils || 0) > 0 ? 3 : 0);
 }
+const experienceConnue = (f, espece) =>
+  espece === 'chat' ? !!f.criteres_especes?.chat?.experience
+  : espece === 'nac' ? !!f.criteres_especes?.nac?.experience
+  : !!f.experience_chien || f.nb_accueils != null;
+
+const NAC_PROIES = ['lapin', 'cobaye', 'rat', 'souris', 'hamster', 'chinchilla', 'oiseau'];
+// Installation exigée → installations qui conviennent
+const INSTALLATIONS_OK = {
+  cage: ['cage', 'grand_enclos', 'liberte'], grand_enclos: ['grand_enclos', 'liberte'], enclos_exterieur: ['enclos_exterieur'],
+  terrarium: ['terrarium'], voliere: ['voliere'], liberte: ['liberte', 'grand_enclos'],
+};
 
 // ─── 1. Règles éliminatoires ─────────────────────────────────────────────────
 // Renvoie la liste des raisons d'exclusion (vide = famille éligible).
@@ -33,9 +51,17 @@ function reglesEliminatoires(animal, f) {
 
   if (f.disponible_le === 'non_dispo') raisons.push('Famille indisponible');
 
-  // Espèce acceptée
-  if (nonVide(f.peut_accueillir) && animal.espece && !contient(f.peut_accueillir, animal.espece))
-    raisons.push(`N'accueille pas : ${animal.espece}`);
+  // Espèce acceptée : filtre absolu. Ancien profil sans espèce = chiens uniquement
+  // (l'ancien questionnaire ne concernait que les chiens).
+  const especesFA = nonVide(f.peut_accueillir) ? f.peut_accueillir : ['chien'];
+  if (animal.espece && !especesFA.includes(animal.espece))
+    raisons.push(`N'accueille pas cette espèce (${animal.espece})`);
+  if (animal.espece === 'nac' && nonVide(f.nac_acceptes) && animal.sous_espece && !f.nac_acceptes.includes(animal.sous_espece))
+    raisons.push(`N'accueille pas ce NAC (${animal.sous_espece})`);
+
+  // Chats et NAC : règles propres à l'espèce
+  for (const r of reglesChat(animal, f)) raisons.push(r);
+  for (const r of reglesNac(animal, f)) raisons.push(r);
 
   // Refus déclarés par la famille dans son questionnaire
   for (const r of refusApplicables(animal, f)) raisons.push(r);
@@ -82,7 +108,7 @@ function reglesEliminatoires(animal, f) {
 
   // Expérience
   if (['confirme', 'expert'].includes(animal.experience_fa_requise) &&
-      (f.experience_chien || f.nb_accueils != null) && experienceFamille(f) < 3)
+      experienceConnue(f, animal.espece) && experienceFamille(f, animal.espece) < 3)
     raisons.push('Famille expérimentée obligatoire');
 
   return raisons;
@@ -112,6 +138,36 @@ function refusApplicables(animal, f) {
   return [...new Set(out)];
 }
 
+// Chat : refus de la famille, accès extérieur, cohabitation
+function reglesChat(animal, f) {
+  if (animal.espece !== 'chat') return [];
+  const c = f.criteres_especes?.chat || {};
+  const d = animal.details?.chat || {};
+  const refus = c.refus || [];
+  const out = [];
+  if (refus.includes('biberon') && d.biberon === 'oui') out.push('La famille refuse les chatons au biberon');
+  if (refus.includes('age') && animal.age_annees > 12) out.push('La famille refuse les chats âgés (>12 ans)');
+  if (refus.includes('fiv') && ['fiv', 'felv'].includes(d.tests)) out.push('La famille refuse les chats FIV+ / FeLV+');
+  if (refus.includes('craintif') && /peureux/i.test(animal.comportement || '')) out.push('La famille refuse les chats craintifs');
+  if (refus.includes('malpropre') && /non propre/i.test(animal.comportement || '')) out.push('La famille refuse les chats malpropres');
+  if (refus.includes('exterieur') && d.exterieur === 'exterieur_requis') out.push('La famille refuse les chats ayant besoin de sortir');
+  if (d.exterieur === 'exterieur_requis' && c.exterieur === 'non') out.push('Le chat a besoin de sortir, impossible chez cette famille');
+  if (d.exterieur === 'balcon_securise' && c.securise === 'non') out.push('Fenêtres / balcon sécurisés obligatoires');
+  if (d.congenere === 'seul' && contient(f.animaux_actuels, 'chat')) out.push('Le chat doit être le seul chat du foyer');
+  return out;
+}
+
+// NAC : installation nécessaire
+function reglesNac(animal, f) {
+  if (animal.espece !== 'nac') return [];
+  const c = f.criteres_especes?.nac || {};
+  const d = animal.details?.nac || {};
+  const out = [];
+  if (d.installation && nonVide(c.installations) && !(INSTALLATIONS_OK[d.installation] || []).some(i => c.installations.includes(i)))
+    out.push('Installation nécessaire non disponible chez la famille');
+  return out;
+}
+
 // ─── 2. Score « règles » ─────────────────────────────────────────────────────
 function scoreRegles(animal, f) {
   let score = 60;
@@ -124,7 +180,7 @@ function scoreRegles(animal, f) {
   else attention.push('Disponibilité non renseignée');
 
   // Expérience
-  const exp = experienceFamille(f);
+  const exp = experienceFamille(f, animal.espece);
   if (animal.experience_fa_requise === 'intermediaire') {
     score += exp >= 2 ? 8 : -8;
     if (exp < 2) attention.push('Expérience préférable pour cet animal');
@@ -159,6 +215,21 @@ function scoreRegles(animal, f) {
     score -= 4; attention.push('Pas de véhicule (souhaitable)');
   }
 
+  // Points d'attention propres au chat et aux NAC
+  if (animal.espece === 'chat') {
+    const c = f.criteres_especes?.chat || {}, d = animal.details?.chat || {};
+    if (d.congenere === 'oui' && !contient(f.animaux_actuels, 'chat')) attention.push('Le chat doit vivre avec un autre chat');
+    if (d.exterieur === 'balcon_securise' && c.securise === 'installable') attention.push('Sécurisation des fenêtres à prévoir');
+    if (d.tests === 'non_teste' && contient(f.animaux_actuels, 'chat')) attention.push('Chat non testé FIV/FeLV, chat déjà au foyer');
+  }
+  if (animal.espece === 'nac') {
+    const c = f.criteres_especes?.nac || {}, d = animal.details?.nac || {};
+    if (NAC_PROIES.includes(animal.sous_espece) && (contient(f.animaux_actuels, 'chat') || contient(f.animaux_actuels, 'chien')))
+      attention.push('Petit animal proie : chat ou chien au foyer');
+    if (d.groupe === 'obligatoire' && c.groupe === 'non') attention.push('Espèce sociale : la famille ne peut pas accueillir plusieurs individus');
+    if (!nonVide(c.installations)) attention.push('Installations de la famille non renseignées');
+  }
+
   // Soins réguliers : impossible à détecter avec certitude, on signale
   if (Array.isArray(f.refus) && f.refus.includes('soins') && animal.besoins_specifiques)
     attention.push('La famille préfère éviter les soins réguliers');
@@ -175,7 +246,8 @@ function scoreRegles(animal, f) {
   if (animal.compatible_chats == null && contient(f.animaux_actuels, 'chat')) attention.push('Compatibilité chats inconnue');
 
   // Profil famille incomplet
-  const manquants = ['type_logement', 'heures_seul', 'presence_journee', 'experience_chien'].filter(k => f[k] == null);
+  const manquants = ['type_logement', 'heures_seul', 'presence_journee', ...(animal.espece === 'chien' ? ['experience_chien'] : [])]
+    .filter(k => f[k] == null);
   if (manquants.length) { score -= manquants.length * 3; attention.push('Profil famille incomplet'); }
 
   return { score: borne(score), attention };
@@ -201,7 +273,7 @@ const CHAMPS_ANIMAL = [
   'compatible_enfants', 'compatible_chiens', 'compatible_chats', 'temps_seul_max',
   'presence_constante', 'balades_min_jour', 'niveau_exercice', 'escaliers', 'cloture_min',
   'sortie_sans_laisse', 'vehicule_requis', 'experience_fa_requise', 'comportement',
-  'besoins_specifiques', 'description', 'historique'
+  'besoins_specifiques', 'description', 'historique', 'sous_espece', 'details'
 ];
 const CHAMPS_FAMILLE = [
   'type_logement', 'superficie', 'jardin', 'hauteur_cloture', 'escaliers', 'etage', 'vehicule',
@@ -210,7 +282,7 @@ const CHAMPS_FAMILLE = [
   'age_accepte', 'duree_accueil', 'disponible_le', 'situation_absence', 'situation_destruction',
   'situation_grogne', 'situation_urgence', 'situation_morsure', 'situation_reactivite',
   'situation_consignes', 'situation_decouragement', 'situation_limite', 'situation_nuits',
-  'refus', 'experiences_gerees', 'engagement'
+  'refus', 'experiences_gerees', 'engagement', 'peut_accueillir', 'nac_acceptes', 'criteres_especes'
 ];
 
 function profil(obj, champs) {
@@ -232,7 +304,15 @@ function profilFamille(f) {
   return p;
 }
 
-const profilAnimal = (a) => profil(a, CHAMPS_ANIMAL);
+function profilAnimal(a) {
+  const p = profil(a, CHAMPS_ANIMAL);
+  // Identifiant de l'animal et dates internes : inutiles à l'IA
+  if (p.details?.commun) {
+    const { puce, date_limite, ...commun } = p.details.commun;
+    p.details = { ...p.details, commun };
+  }
+  return p;
+}
 
 // Nettoie la réponse de l'IA
 function normaliserReponseIA(r) {
