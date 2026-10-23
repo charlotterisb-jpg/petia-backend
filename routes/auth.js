@@ -7,6 +7,7 @@ const router  = express.Router();
 const { createClient } = require('@supabase/supabase-js');
 const { requireAdmin } = require('../middleware/admin');
 const { requireUser, clientEphemere, facteursActifs, gotrue, verifierCode } = require('../middleware/session');
+const { nettoyerProfil, creerJetonInscription } = require('../services/profilFA');
 
 const supabase = createClient(
   process.env.SUPABASE_URL,
@@ -108,11 +109,11 @@ function pickFields(obj, fields) {
 // ─── POST /api/auth/register-fa ──────────────────────────────────────────────
 router.post('/register-fa', async (req, res) => {
   try {
-    const { email, password, prenom, nom, ville, code_postal, departement } = req.body;
+    const { email, password, prenom, nom, ville, code_postal, departement, telephone } = req.body;
     if (!email || !password || !prenom || !nom || !ville || !code_postal || !departement)
       return res.status(400).json({ message: 'Champs obligatoires manquants' });
 
-    const { data: authData, error: authError } = await supabase.auth.signUp({
+    const { data: authData, error: authError } = await clientEphemere().auth.signUp({
       email,
       password,
       options: {
@@ -132,6 +133,11 @@ router.post('/register-fa', async (req, res) => {
       .insert({
         id: authData.user.id,
         email, prenom, nom, ville, code_postal, departement,
+        telephone: typeof telephone === 'string' ? telephone.trim().slice(0, 30) : null,
+        // Logement & quotidien saisis sur la page d'inscription
+        ...nettoyerProfil(req.body.profil || {}),
+        // Dossier complet seulement une fois le questionnaire envoyé
+        statut_dossier: 'incomplet',
         password_hash: 'supabase_auth'
       })
       .select()
@@ -160,7 +166,9 @@ router.post('/register-fa', async (req, res) => {
 
     return res.status(201).json({
       message: 'Compte créé ! Vérifiez votre email.',
-      famille: pickFields(data, FA_PUBLIC_FIELDS)
+      famille: pickFields(data, FA_PUBLIC_FIELDS),
+      // Permet d'envoyer le questionnaire dans les 24 h, sans être connecté
+      jeton_inscription: creerJetonInscription(data.id)
     });
 
   } catch (e) {
@@ -176,7 +184,7 @@ router.post('/register-refuge', async (req, res) => {
     if (!email || !password || !nom || !ville || !code_postal || !departement)
       return res.status(400).json({ message: 'Champs obligatoires manquants' });
 
-    const { data: authData, error: authError } = await supabase.auth.signUp({
+    const { data: authData, error: authError } = await clientEphemere().auth.signUp({
       email,
       password,
       options: {

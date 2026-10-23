@@ -37,6 +37,9 @@ function reglesEliminatoires(animal, f) {
   if (nonVide(f.peut_accueillir) && animal.espece && !contient(f.peut_accueillir, animal.espece))
     raisons.push(`N'accueille pas : ${animal.espece}`);
 
+  // Refus déclarés par la famille dans son questionnaire
+  for (const r of refusApplicables(animal, f)) raisons.push(r);
+
   // Temps seul
   if (animal.temps_seul_max && animal.temps_seul_max !== 'flexible' && f.heures_seul) {
     if (HEURES.indexOf(f.heures_seul) > HEURES.indexOf(animal.temps_seul_max))
@@ -83,6 +86,30 @@ function reglesEliminatoires(animal, f) {
     raisons.push('Famille expérimentée obligatoire');
 
   return raisons;
+}
+
+// Refus du questionnaire FA → caractéristiques de l'animal.
+// Ne s'appliquent qu'aux chiens (le questionnaire parle de chiens).
+const RACES = {
+  malinois: /malinois|berger belge/i,
+  staff: /staff|amstaff|staffordshire/i,
+  categorie: /pit ?bull|boerbull|tosa|rottweiler|amstaff|american staffordshire|mastiff/i,
+};
+function refusApplicables(animal, f) {
+  const refus = Array.isArray(f.refus) ? f.refus : [];
+  if (!refus.length || animal.espece !== 'chien') return [];
+  const ageMois = (animal.age_annees || 0) * 12 + (animal.age_mois || 0);
+  const ageConnu = animal.age_annees != null || animal.age_mois != null;
+  const race = animal.race || '';
+  const out = [];
+  if (refus.includes('grand_chien') && Number(animal.poids_kg) > 25) out.push('La famille refuse les grands chiens (>25 kg)');
+  if (refus.includes('tres_energique') && animal.niveau_exercice === 'tres_eleve') out.push('La famille refuse les chiens très énergiques');
+  if (refus.includes('chiot') && ageConnu && ageMois < 6) out.push('La famille refuse les chiots');
+  if (refus.includes('age') && animal.age_annees > 10) out.push('La famille refuse les chiens âgés (>10 ans)');
+  if (refus.includes('non_propre') && /non propre/i.test(animal.comportement || '')) out.push('La famille refuse les chiens non propres');
+  for (const k of ['malinois', 'staff', 'categorie'])
+    if (refus.includes(k) && RACES[k].test(race)) out.push(`Race refusée par la famille (${race})`);
+  return [...new Set(out)];
 }
 
 // ─── 2. Score « règles » ─────────────────────────────────────────────────────
@@ -132,6 +159,16 @@ function scoreRegles(animal, f) {
     score -= 4; attention.push('Pas de véhicule (souhaitable)');
   }
 
+  // Soins réguliers : impossible à détecter avec certitude, on signale
+  if (Array.isArray(f.refus) && f.refus.includes('soins') && animal.besoins_specifiques)
+    attention.push('La famille préfère éviter les soins réguliers');
+  // Expérience déjà vécue avec ce type de difficulté
+  const vecu = Array.isArray(f.experiences_gerees) ? f.experiences_gerees : [];
+  if (/anxi/i.test(animal.comportement || '') && vecu.includes('anxiete_separation')) score += 4;
+  if (/réactiv|reactiv/i.test(animal.comportement || '') && (vecu.includes('reactif_congeneres') || vecu.includes('reactif_humains'))) score += 4;
+  if (animal.age_annees === 0 && (animal.age_mois || 0) < 6 && vecu.includes('chiot')) score += 3;
+  if (f.engagement) score += Math.round((f.engagement - 5) * 0.8);
+
   // Compatibilités inconnues : on signale
   if (animal.compatible_enfants == null && nonVide(f.enfants)) attention.push('Compatibilité enfants inconnue');
   if (animal.compatible_chiens == null && contient(f.animaux_actuels, 'chien')) attention.push('Compatibilité chiens inconnue');
@@ -172,7 +209,8 @@ const CHAMPS_FAMILLE = [
   'lieux_promenade', 'experience_chien', 'nb_accueils', 'note_moyenne', 'taille_acceptee',
   'age_accepte', 'duree_accueil', 'disponible_le', 'situation_absence', 'situation_destruction',
   'situation_grogne', 'situation_urgence', 'situation_morsure', 'situation_reactivite',
-  'situation_consignes', 'situation_decouragement', 'situation_limite'
+  'situation_consignes', 'situation_decouragement', 'situation_limite', 'situation_nuits',
+  'refus', 'experiences_gerees', 'engagement'
 ];
 
 function profil(obj, champs) {

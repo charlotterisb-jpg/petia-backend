@@ -24,7 +24,8 @@ const COLONNES_FAMILLE_MATCHING = [
   'nb_accueils', 'note_moyenne', 'peut_accueillir', 'taille_acceptee', 'age_accepte',
   'duree_accueil', 'disponible_le', 'situation_absence', 'situation_destruction',
   'situation_grogne', 'situation_urgence', 'situation_morsure', 'situation_reactivite',
-  'situation_consignes', 'situation_decouragement', 'situation_limite'
+  'situation_consignes', 'situation_decouragement', 'situation_limite', 'situation_nuits',
+  'refus', 'experiences_gerees', 'engagement'
 ].join(',');
 
 // Ce que le refuge voit de la famille dans la liste des matchs
