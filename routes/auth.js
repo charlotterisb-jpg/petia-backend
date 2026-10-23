@@ -6,6 +6,7 @@ const express = require('express');
 const router  = express.Router();
 const { createClient } = require('@supabase/supabase-js');
 const { requireAdmin } = require('../middleware/admin');
+const { requireUser, clientEphemere, facteursActifs, gotrue, verifierCode } = require('../middleware/session');
 
 const supabase = createClient(
   process.env.SUPABASE_URL,
@@ -239,7 +240,7 @@ router.post('/login-fa', async (req, res) => {
     return res.status(400).json({ message: 'Email et mot de passe requis.' });
 
   try {
-    const { data: authData, error: authError } = await supabase.auth.signInWithPassword({ email, password });
+    const { data: authData, error: authError } = await clientEphemere().auth.signInWithPassword({ email, password });
 
     if (authError)
       return res.status(401).json({ message: 'Email ou mot de passe incorrect.' });
@@ -255,6 +256,10 @@ router.post('/login-fa', async (req, res) => {
 
     if (fa.statut_dossier === 'suspendu')
       return res.status(403).json({ message: 'Votre compte a été suspendu.' });
+
+    // Double authentification activée : on demande le code avant d'ouvrir la session
+    if (facteursActifs(authData.user).length)
+      return res.json({ mfa_required: true, ticket: authData.session.access_token });
 
     return res.json({
       token: authData.session.access_token,
@@ -274,7 +279,7 @@ router.post('/login-fourriere', async (req, res) => {
     return res.status(400).json({ message: 'Email et mot de passe requis.' });
 
   try {
-    const { data: authData, error: authError } = await supabase.auth.signInWithPassword({ email, password });
+    const { data: authData, error: authError } = await clientEphemere().auth.signInWithPassword({ email, password });
 
     if (authError)
       return res.status(401).json({ message: 'Email ou mot de passe incorrect.' });
@@ -290,6 +295,9 @@ router.post('/login-fourriere', async (req, res) => {
 
     if (refuge.statut === 'suspendu')
       return res.status(403).json({ message: 'Votre compte a été suspendu.' });
+
+    if (facteursActifs(authData.user).length)
+      return res.json({ mfa_required: true, ticket: authData.session.access_token });
 
     return res.json({
       token: authData.session.access_token,
@@ -463,6 +471,94 @@ router.post('/refuge-rejected', requireAdmin, async (req, res) => {
 // ─── POST /api/auth/logout ────────────────────────────────────────────────────
 router.post('/logout', async (req, res) => {
   return res.json({ message: 'Déconnexion effectuée.' });
+});
+
+// ═══ DOUBLE AUTHENTIFICATION (facultative) — Google Authenticator ═══════════
+
+const messageCode = (e) =>
+  e.status === 422 || e.status === 400 ? 'Code incorrect ou expiré.' : 'Erreur lors de la vérification du code.';
+
+// ─── POST /api/auth/mfa/login — 2e étape de connexion ────────────────────────
+// { ticket (jeton obtenu avec le mot de passe), code, type: 'fa' | 'refuge' }
+router.post('/mfa/login', async (req, res) => {
+  const { ticket, code, type } = req.body || {};
+  if (!ticket || !code || !['fa', 'refuge'].includes(type))
+    return res.status(400).json({ message: 'Requête incomplète.' });
+  try {
+    const { data: { user }, error } = await supabaseAdmin.auth.getUser(ticket);
+    if (error || !user) return res.status(401).json({ message: 'Session expirée, reconnectez-vous.' });
+    const facteur = facteursActifs(user)[0];
+    if (!facteur) return res.status(400).json({ message: 'Double authentification non activée.' });
+
+    let session;
+    try { session = await verifierCode(ticket, facteur.id, code); }
+    catch (e) { return res.status(401).json({ message: messageCode(e) }); }
+
+    const table = type === 'fa' ? 'familles_accueil' : 'refuges';
+    const { data: profil } = await supabaseAdmin.from(table).select('*').eq('id', user.id).single();
+    if (!profil) return res.status(404).json({ message: 'Profil introuvable.' });
+
+    return res.json(type === 'fa'
+      ? { token: session.access_token, famille: pickFields(profil, FA_PUBLIC_FIELDS) }
+      : { token: session.access_token, refuge: pickFields(profil, REFUGE_PUBLIC_FIELDS) });
+  } catch (e) {
+    console.error('mfa/login error:', e);
+    return res.status(500).json({ message: 'Erreur serveur.' });
+  }
+});
+
+// ─── GET /api/auth/mfa/statut ────────────────────────────────────────────────
+router.get('/mfa/statut', requireUser, (req, res) => {
+  res.json({ active: facteursActifs(req.user).length > 0 });
+});
+
+// ─── POST /api/auth/mfa/activer — affiche le QR code ─────────────────────────
+router.post('/mfa/activer', requireUser, async (req, res) => {
+  try {
+    if (facteursActifs(req.user).length)
+      return res.status(400).json({ message: 'La double authentification est déjà activée.' });
+    // Supprime une activation commencée mais jamais terminée
+    for (const f of (req.user.factors || []).filter(f => f.status !== 'verified'))
+      await gotrue(`/factors/${f.id}`, { method: 'DELETE', token: req.token }).catch(() => {});
+    const f = await gotrue('/factors', {
+      method: 'POST', token: req.token,
+      body: { factor_type: 'totp', friendly_name: 'PetIA', issuer: 'PetIA' },
+    });
+    return res.json({ factor_id: f.id, qr_code: f.totp?.qr_code, secret: f.totp?.secret, uri: f.totp?.uri });
+  } catch (e) {
+    console.error('mfa/activer error:', e);
+    return res.status(500).json({ message: 'Impossible de démarrer l\'activation.' });
+  }
+});
+
+// ─── POST /api/auth/mfa/confirmer — { factor_id, code } ──────────────────────
+// Renvoie un nouveau jeton (session validée avec le code)
+router.post('/mfa/confirmer', requireUser, async (req, res) => {
+  const { factor_id, code } = req.body || {};
+  if (!factor_id || !code) return res.status(400).json({ message: 'Code requis.' });
+  try {
+    const session = await verifierCode(req.token, factor_id, code);
+    return res.json({ token: session.access_token });
+  } catch (e) {
+    return res.status(400).json({ message: messageCode(e) });
+  }
+});
+
+// ─── POST /api/auth/mfa/desactiver — { code } ────────────────────────────────
+router.post('/mfa/desactiver', requireUser, async (req, res) => {
+  const facteur = facteursActifs(req.user)[0];
+  if (!facteur) return res.status(400).json({ message: 'La double authentification n\'est pas activée.' });
+  if (!req.body?.code) return res.status(400).json({ message: 'Code requis.' });
+  try {
+    let session;
+    try { session = await verifierCode(req.token, facteur.id, req.body.code); }
+    catch (e) { return res.status(400).json({ message: messageCode(e) }); }
+    await gotrue(`/factors/${facteur.id}`, { method: 'DELETE', token: session.access_token });
+    return res.json({ token: session.access_token });
+  } catch (e) {
+    console.error('mfa/desactiver error:', e);
+    return res.status(500).json({ message: 'Erreur serveur.' });
+  }
 });
 
 module.exports = router;

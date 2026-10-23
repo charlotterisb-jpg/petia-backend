@@ -11,20 +11,8 @@ const supabaseAdmin = createClient(
   process.env.SUPABASE_SERVICE_KEY
 );
 
-// ─── Middleware auth (vérifie le token Supabase) ──────────────────────────────
-async function requireAuth(req, res, next) {
-  const auth = req.headers.authorization;
-  if (!auth || !auth.startsWith('Bearer '))
-    return res.status(401).json({ message: 'Token requis.' });
-
-  const token = auth.split(' ')[1];
-  const { data: { user }, error } = await supabaseAdmin.auth.getUser(token);
-  if (error || !user)
-    return res.status(401).json({ message: 'Token invalide ou expiré.' });
-
-  req.user = user;
-  next();
-}
+// Session : contrôle commun (exige le code si la double authentification est activée)
+const requireAuth = require('../middleware/session').requireUser;
 
 // ─── POST /api/animal — Ajouter un animal ─────────────────────────────────────
 router.post('/', requireAuth, async (req, res) => {

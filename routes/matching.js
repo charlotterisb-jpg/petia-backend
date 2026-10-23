@@ -31,16 +31,8 @@ const COLONNES_FAMILLE_MATCHING = [
 const COLONNES_FAMILLE_AFFICHAGE =
   'prenom, ville, code_postal, type_logement, jardin, nb_accueils, note_moyenne, disponible_le, experience_chien';
 
-// ─── Auth ────────────────────────────────────────────────────────────────────
-async function requireAuth(req, res, next) {
-  const auth = req.headers.authorization;
-  if (!auth || !auth.startsWith('Bearer '))
-    return res.status(401).json({ message: 'Token requis.' });
-  const { data: { user }, error } = await supabase.auth.getUser(auth.split(' ')[1]);
-  if (error || !user) return res.status(401).json({ message: 'Token invalide ou expiré.' });
-  req.user = user;
-  next();
-}
+// Session : contrôle commun (exige le code si la double authentification est activée)
+const requireAuth = require('../middleware/session').requireUser;
 
 async function animalDuRefuge(animalId, refugeId) {
   const { data } = await supabase.from('animaux').select('*').eq('id', animalId).single();
