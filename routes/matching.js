@@ -5,7 +5,7 @@ const { analyserCompatibilite } = require('../services/claude');
 
 const supabase = createClient(
   process.env.SUPABASE_URL,
-  process.env.SUPABASE_ANON_KEY
+  process.env.SUPABASE_SERVICE_KEY // clé serveur : nécessaire avec RLS activé
 );
 
 // Calcul distance entre deux points GPS
