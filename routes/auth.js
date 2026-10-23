@@ -174,7 +174,7 @@ router.post('/register-fa', async (req, res) => {
 
   } catch (e) {
     console.error('register-fa error:', e);
-    return res.status(500).json({ message: 'Erreur serveur', detail: e.message });
+    return res.status(500).json({ message: 'Erreur serveur.' });
   }
 });
 
@@ -244,7 +244,7 @@ router.post('/register-refuge', async (req, res) => {
 
   } catch (e) {
     console.error('register-refuge error:', e);
-    return res.status(500).json({ message: 'Erreur serveur', detail: e.message });
+    return res.status(500).json({ message: 'Erreur serveur.' });
   }
 });
 
@@ -368,64 +368,7 @@ router.post('/reset-password', async (req, res) => {
   }
 });
 
-// ─── POST /api/auth/confirm-email ─────────────────────────────────────────────
-// Appelé par le frontend après que Supabase a vérifié l'email (redirect URL)
-// Le frontend reçoit le token dans l'URL et appelle cette route pour envoyer la confirmation
-router.post('/confirm-email', async (req, res) => {
-  const { email, prenom, role } = req.body;
-  if (!email) return res.status(400).json({ message: 'Email requis.' });
 
-  try {
-    await sendBrevoEmail({
-      to: email,
-      subject: '✅ Votre compte PetIA est activé !',
-      htmlContent: buildEmail({
-        badge: '✅', badgeColor: '#22C55E',
-        label: 'Compte activé', labelColor: '#22C55E',
-        title: `Votre compte est activé${prenom ? `,<br>${prenom}` : ''} !`,
-        body: role === 'refuge'
-          ? "Votre adresse email a bien été confirmée. Votre dossier est en cours de validation par notre équipe — nous vous contacterons sous 48h."
-          : "Votre adresse email a bien été confirmée. Votre compte est maintenant actif — vous pouvez vous connecter et commencer à accueillir des animaux.",
-        ctaText: 'Accéder à mon espace →',
-        ctaHref: 'https://petia-frontend.vercel.app',
-        ctaColor: '#22C55E', ctaShadow: 'rgba(34,197,94,.4)',
-        footer: "Bienvenue dans la communauté PetIA 🐾"
-      })
-    });
-    return res.json({ message: 'Email de confirmation envoyé.' });
-  } catch (err) {
-    console.error('confirm-email error:', err);
-    return res.status(500).json({ message: 'Erreur serveur.' });
-  }
-});
-
-// ─── POST /api/auth/password-changed ──────────────────────────────────────────
-// À appeler depuis le frontend après un changement de mot de passe réussi
-router.post('/password-changed', async (req, res) => {
-  const { email } = req.body;
-  if (!email) return res.status(400).json({ message: 'Email requis.' });
-
-  try {
-    await sendBrevoEmail({
-      to: email,
-      subject: '🔒 Votre mot de passe PetIA a été modifié',
-      htmlContent: buildEmail({
-        badge: '🔒', badgeColor: '#7C3AED',
-        label: 'Sécurité du compte', labelColor: '#7C3AED',
-        title: 'Mot de passe modifié',
-        body: 'Votre mot de passe PetIA a bien été mis à jour. Si vous êtes à l\'origine de cette modification, vous pouvez ignorer cet email. <strong style="color:#fff;">Si vous ne reconnaissez pas cette action</strong>, contactez-nous immédiatement.',
-        ctaText: 'Accéder à mon compte →',
-        ctaHref: 'https://petia-frontend.vercel.app',
-        ctaColor: '#7C3AED', ctaShadow: 'rgba(124,58,237,.4)',
-        footer: "En cas de problème, répondez à cet email ou contactez notre support."
-      })
-    });
-    return res.json({ message: 'Email de confirmation de changement de mot de passe envoyé.' });
-  } catch (err) {
-    console.error('password-changed error:', err);
-    return res.status(500).json({ message: 'Erreur serveur.' });
-  }
-});
 
 // ─── POST /api/auth/refuge-validated ──────────────────────────────────────────
 // À appeler depuis le dashboard admin quand un dossier refuge est validé

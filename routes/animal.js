@@ -152,7 +152,7 @@ router.post('/', requireAuth, async (req, res) => {
 
   } catch (e) {
     console.error('POST /animal error:', e);
-    return res.status(500).json({ message: 'Erreur serveur.', detail: e.message });
+    return res.status(500).json({ message: 'Erreur serveur.' });
   }
 });
 
