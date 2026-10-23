@@ -43,7 +43,7 @@ async function animalDuRefuge(animalId, refugeId) {
 async function listerMatchs(animalId) {
   const { data, error } = await supabase
     .from('matchs')
-    .select(`id, score, recommandation, incompatibilites, details_score, bonus_urgence, statut, created_at,
+    .select(`id, score, recommandation, incompatibilites, details_score, bonus_urgence, statut, reponse_fa, date_reponse_fa, created_at,
              famille:familles_accueil(${COLONNES_FAMILLE_AFFICHAGE})`)
     .eq('animal_id', animalId)
     .order('score', { ascending: false });

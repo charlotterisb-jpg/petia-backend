@@ -45,4 +45,105 @@ router.put('/questionnaire', identifierFamille, async (req, res) => {
   }
 });
 
+// ═══ ESPACE FAMILLE (session obligatoire) ═══════════════════════════════════
+
+// La session doit appartenir à une famille d'accueil
+async function requireFamille(req, res, next) {
+  requireUser(req, res, async () => {
+    const { data } = await supabaseAdmin.from('familles_accueil').select('id').eq('id', req.user.id).maybeSingle();
+    if (!data) return res.status(403).json({ message: 'Espace réservé aux familles d\'accueil.' });
+    req.famId = data.id;
+    next();
+  });
+}
+
+// Ce que la famille voit d'elle-même (jamais les notes internes ni les secrets)
+const COLONNES_MOI = [
+  'id', 'prenom', 'nom', 'email', 'telephone', 'ville', 'code_postal', 'type_logement', 'jardin', 'hauteur_cloture',
+  'escaliers', 'etage', 'vehicule', 'enfants', 'animaux_actuels', 'heures_seul', 'presence_journee', 'balades_par_jour',
+  'duree_balade', 'lieux_promenade', 'duree_accueil', 'disponible_le', 'nb_accueils', 'note_moyenne', 'previsitee',
+  'statut_dossier', 'decision_motif', 'questionnaire_soumis_le', 'peut_accueillir', 'nac_acceptes', 'criteres_especes',
+  'experience_chien', 'experiences_gerees', 'refus', 'engagement', 'motivation', 'attachement', 'duree_longue',
+  'situation_nuits', 'situation_destruction', 'situation_absence', 'situation_reactivite', 'situation_morsure',
+  'situation_consignes', 'situation_decouragement', 'situation_grogne', 'situation_limite', 'autres_infos', 'questionnaire',
+].join(',');
+
+// ─── GET /api/fa/moi ─────────────────────────────────────────────────────────
+router.get('/moi', requireFamille, async (req, res) => {
+  try {
+    const { data, error } = await supabaseAdmin.from('familles_accueil').select(COLONNES_MOI).eq('id', req.famId).single();
+    if (error) throw error;
+    return res.json({ famille: data });
+  } catch (e) {
+    console.error('GET /fa/moi error:', e);
+    return res.status(500).json({ message: 'Erreur serveur.' });
+  }
+});
+
+// ─── PATCH /api/fa/disponibilite — { disponible_le } ─────────────────────────
+router.patch('/disponibilite', requireFamille, async (req, res) => {
+  const v = req.body?.disponible_le;
+  if (!['maintenant', 'cette_semaine', 'ce_mois', 'non_dispo'].includes(v))
+    return res.status(400).json({ message: 'Disponibilité invalide.' });
+  const { error } = await supabaseAdmin.from('familles_accueil')
+    .update({ disponible_le: v, updated_at: new Date().toISOString() }).eq('id', req.famId);
+  if (error) { console.error('PATCH /fa/disponibilite error:', error); return res.status(500).json({ message: 'Erreur serveur.' }); }
+  return res.json({ message: 'Disponibilité mise à jour.', disponible_le: v });
+});
+
+// Ce que la famille voit d'un animal proposé (pas la puce ni les notes internes)
+const COLONNES_ANIMAL_FA =
+  'id, nom, espece, sous_espece, race, age_annees, age_mois, sexe, poids_kg, sterilise, urgence, statut, ' +
+  'compatible_enfants, compatible_chiens, compatible_chats, temps_seul_max, balades_min_jour, niveau_exercice, ' +
+  'description, comportement, historique, besoins_specifiques, details, photo_url, ' +
+  'refuge:refuges(nom, ville, code_postal, telephone, email)';
+
+// ─── GET /api/fa/propositions ────────────────────────────────────────────────
+// Uniquement les propositions validées par le refuge (et la suite de l'accueil)
+router.get('/propositions', requireFamille, async (req, res) => {
+  try {
+    const { data, error } = await supabaseAdmin
+      .from('matchs')
+      .select(`id, score, recommandation, statut, reponse_fa, date_reponse_fa, created_at, updated_at, details_score,
+               animal:animaux(${COLONNES_ANIMAL_FA})`)
+      .eq('famille_id', req.famId)
+      .in('statut', ['accepte', 'en_cours', 'termine'])
+      .order('updated_at', { ascending: false });
+    if (error) throw error;
+    const propositions = (data || []).map(m => {
+      if (m.animal?.details?.commun) {
+        const { puce, ...commun } = m.animal.details.commun;
+        m.animal.details = { ...m.animal.details, commun };
+      }
+      // Coordonnées du refuge seulement une fois la proposition acceptée
+      if (m.animal?.refuge && m.reponse_fa !== 'oui') { delete m.animal.refuge.telephone; delete m.animal.refuge.email; }
+      return { ...m, resume_ia: m.details_score?.resume_ia || null, details_score: undefined };
+    });
+    return res.json({ propositions });
+  } catch (e) {
+    console.error('GET /fa/propositions error:', e);
+    return res.status(500).json({ message: 'Erreur serveur.' });
+  }
+});
+
+// ─── PATCH /api/fa/propositions/:id — { reponse: 'oui' | 'non' } ─────────────
+router.patch('/propositions/:id', requireFamille, async (req, res) => {
+  try {
+    const reponse = req.body?.reponse;
+    if (!['oui', 'non'].includes(reponse)) return res.status(400).json({ message: 'Réponse invalide.' });
+    const { data: m } = await supabaseAdmin.from('matchs')
+      .select('id, famille_id, statut, reponse_fa').eq('id', req.params.id).maybeSingle();
+    if (!m || m.famille_id !== req.famId || m.statut !== 'accepte')
+      return res.status(404).json({ message: 'Proposition introuvable ou plus ouverte.' });
+    const maintenant = new Date().toISOString();
+    const { error } = await supabaseAdmin.from('matchs')
+      .update({ reponse_fa: reponse, date_reponse_fa: maintenant, updated_at: maintenant }).eq('id', m.id);
+    if (error) throw error;
+    return res.json({ message: reponse === 'oui' ? 'Proposition acceptée.' : 'Proposition déclinée.', reponse_fa: reponse });
+  } catch (e) {
+    console.error('PATCH /fa/propositions error:', e);
+    return res.status(500).json({ message: 'Erreur serveur.' });
+  }
+});
+
 module.exports = router;
