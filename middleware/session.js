@@ -73,9 +73,19 @@ async function requireUser(req, res, next) {
     if (facteursActifs(user).length && aal !== 'aal2')
       return res.status(401).json({ message: 'Code de vérification requis.', code: 'MFA_REQUIRED' });
 
+    // Compte bloqué ou clôturé : plus aucun accès, même avec une session encore valide
+    const { profilsDe, noterActivite } = require('../services/comptes');
+    const profils = await profilsDe(user.id);
+    if (profils.some(p => p.ligne.bloque_le))
+      return res.status(403).json({ message: 'Ce compte est bloqué. Contactez PetIA pour le débloquer.', code: 'COMPTE_BLOQUE' });
+    if (profils.length && profils.every(p => p.ligne.cloture_le))
+      return res.status(403).json({ message: 'Ce compte est clôturé.', code: 'COMPTE_CLOTURE' });
+    profils.forEach(p => noterActivite(p.table, p.ligne).catch(() => {}));
+
     req.user = user;
     req.token = token;
     req.aal = aal;
+    req.profils = profils;
     next();
   } catch (e) {
     console.error('requireUser error:', e);

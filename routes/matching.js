@@ -10,6 +10,7 @@ const router = express.Router();
 const { createClient } = require('@supabase/supabase-js');
 const { analyserMatch, iaDisponible } = require('../services/claude');
 const { calculerMatchs } = require('../services/matching');
+const { journaliser, surveillerConsultations } = require('../services/journal');
 
 const supabase = createClient(
   process.env.SUPABASE_URL,
@@ -54,14 +55,16 @@ async function listerMatchs(animalId) {
 // ─── Moteur : calcule et enregistre les matchs d'un animal ───────────────────
 async function lancerMatching(animal) {
   // Pas de proposition pour l'animal d'un refuge non validé
-  const { data: refuge } = await supabase.from('refuges').select('statut').eq('id', animal.refuge_id).maybeSingle();
-  if (refuge?.statut !== 'actif')
+  const { data: refuge } = await supabase.from('refuges').select('statut, cloture_le, bloque_le').eq('id', animal.refuge_id).maybeSingle();
+  if (refuge?.statut !== 'actif' || refuge.cloture_le || refuge.bloque_le)
     return { familles_validees: 0, exclues_par_regles: 0, eligibles: 0, ia_utilisee: false, refuge_non_valide: true };
 
   const { data: familles, error } = await supabase
     .from('familles_accueil')
     .select(COLONNES_FAMILLE_MATCHING)
-    .eq('statut_dossier', 'valide');
+    .eq('statut_dossier', 'valide')
+    .is('cloture_le', null)
+    .is('bloque_le', null);
   if (error) throw error;
 
   // Familles déjà engagées (acceptée, refusée, en cours…) : on ne les repropose pas
@@ -93,13 +96,22 @@ async function lancerMatching(animal) {
   };
 }
 
+// Le refuge consulte les profils (partiels) des familles proposées : tracé et surveillé
+function consultation(req, animal, matchs) {
+  journaliser(req, { evenement: 'consultation_matchs', user: req.user, role: 'refuge', cible_type: 'animal', cible_id: animal.id,
+                     details: { familles: matchs.length } })
+    .then(() => surveillerConsultations(req, 'consultation_matchs', req.user));
+}
+
 // ─── Routes ──────────────────────────────────────────────────────────────────
 router.post('/:animalId', requireAuth, async (req, res) => {
   try {
     const animal = await animalDuRefuge(req.params.animalId, req.user.id);
     if (!animal) return res.status(404).json({ message: 'Animal introuvable.' });
     const stats = await lancerMatching(animal);
-    return res.json({ ...stats, matchs: await listerMatchs(animal.id) });
+    const matchs = await listerMatchs(animal.id);
+    consultation(req, animal, matchs);
+    return res.json({ ...stats, matchs });
   } catch (e) {
     console.error('POST /matching error:', e);
     return res.status(500).json({ message: 'Erreur lors du matching.' });
@@ -110,7 +122,9 @@ router.get('/:animalId', requireAuth, async (req, res) => {
   try {
     const animal = await animalDuRefuge(req.params.animalId, req.user.id);
     if (!animal) return res.status(404).json({ message: 'Animal introuvable.' });
-    return res.json({ matchs: await listerMatchs(animal.id) });
+    const matchs = await listerMatchs(animal.id);
+    consultation(req, animal, matchs);
+    return res.json({ matchs });
   } catch (e) {
     console.error('GET /matching error:', e);
     return res.status(500).json({ message: 'Erreur serveur.' });
@@ -137,6 +151,7 @@ router.patch('/match/:matchId', requireAuth, async (req, res) => {
     const { error } = await supabase
       .from('matchs').update({ statut, updated_at: new Date().toISOString() }).eq('id', match.id);
     if (error) throw error;
+    journaliser(req, { evenement: 'match_' + statut, user: req.user, role: 'refuge', cible_type: 'match', cible_id: match.id });
     return res.json({ message: statut === 'accepte' ? 'Match validé.' : 'Match refusé.' });
   } catch (e) {
     console.error('PATCH /matching error:', e);
@@ -185,6 +200,7 @@ router.patch('/match/:matchId/arrivee', requireAuth, async (req, res) => {
     await supabase.from('matchs').update({ statut: 'annule', updated_at: maintenant })
       .eq('animal_id', animal.id).neq('id', m.id).in('statut', ['propose', 'accepte']);
 
+    journaliser(req, { evenement: 'accueil_debut', user: req.user, role: 'refuge', cible_type: 'match', cible_id: m.id });
     return res.json({ message: 'Arrivée confirmée.', date_debut_accueil: debut });
   } catch (e) {
     console.error('PATCH /matching/arrivee error:', e);
@@ -218,6 +234,7 @@ router.patch('/match/:matchId/fin', requireAuth, async (req, res) => {
     // Retour au refuge : l'animal peut à nouveau être proposé
     if (issue === 'retour') lancerMatching({ ...animal, statut: 'disponible' }).catch(err => console.error('Rematch après retour:', err));
 
+    journaliser(req, { evenement: 'accueil_fin', user: req.user, role: 'refuge', cible_type: 'match', cible_id: m.id, details: { issue } });
     return res.json({ message: 'Accueil terminé.', date_fin_accueil: fin, statut_animal: statutsAnimal[issue] });
   } catch (e) {
     console.error('PATCH /matching/fin error:', e);

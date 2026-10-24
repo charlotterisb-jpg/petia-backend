@@ -40,7 +40,7 @@ const limiteSensible = rateLimit({
   message: { message: 'Trop de tentatives depuis cette connexion. Réessayez dans 15 minutes.' },
 });
 for (const chemin of ['/api/auth/login-fa', '/api/auth/login-fourriere', '/api/auth/register-fa', '/api/auth/register-refuge',
-                      '/api/auth/reset-password', '/api/auth/mot-de-passe', '/api/auth/mfa', '/api/admin/moi', '/api/auth/compte-bloque'])
+                      '/api/auth/mot-de-passe', '/api/auth/cloturer', '/api/auth/mfa', '/api/admin/moi', '/api/auth/compte-bloque', '/api/auth/sessions'])
   app.use(chemin, limiteSensible);
 
 // Route de test
@@ -65,4 +65,6 @@ app.use((err, req, res, next) => {
 
 app.listen(PORT, () => {
   console.log(`✅ PetIA API démarrée sur le port ${PORT}`);
+  // Suppression automatique des données arrivées au terme de leur durée de conservation
+  if (process.env.NODE_ENV !== 'test') require('./services/purge').planifierPurge();
 });

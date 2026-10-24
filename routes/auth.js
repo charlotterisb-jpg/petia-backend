@@ -9,11 +9,11 @@ const { requireAdmin } = require('../middleware/admin');
 const { requireUser, clientEphemere, facteursActifs, gotrue, verifierCode } = require('../middleware/session');
 const { nettoyerProfil, creerJetonInscription } = require('../services/profilFA');
 const { nettoyerRefuge, siretValide, esc } = require('../services/refuge');
-
-const supabase = createClient(
-  process.env.SUPABASE_URL,
-  process.env.SUPABASE_ANON_KEY
-);
+const crypto = require('crypto');
+const { journaliser, compter, compteVerrouille, envoyerMail, alerterAdmins, creerLienBlocage,
+        verifierNouvelAppareil, hacher, ip: ipDe, SITE } = require('../services/journal');
+const { profilsDe, noterActivite, sessionServeur, fermerSessions, bloquerCompte,
+        verifierNouveauMotDePasse } = require('../services/comptes');
 
 const supabaseAdmin = createClient(
   process.env.SUPABASE_URL,
@@ -165,6 +165,7 @@ router.post('/register-fa', async (req, res) => {
       console.error('Brevo email error (non-bloquant):', emailErr.message);
     }
 
+    journaliser(req, { evenement: 'inscription', userId: data.id, email, role: 'fa' });
     return res.status(201).json({
       message: 'Compte créé ! Vérifiez votre email.',
       famille: pickFields(data, FA_PUBLIC_FIELDS),
@@ -237,6 +238,7 @@ router.post('/register-refuge', async (req, res) => {
       console.error('Brevo email error (non-bloquant):', emailErr.message);
     }
 
+    journaliser(req, { evenement: 'inscription', userId: data.id, email, role: 'refuge' });
     return res.status(201).json({
       message: 'Compte créé ! Vérifiez votre email.',
       refuge: pickFields(data, REFUGE_PUBLIC_FIELDS)
@@ -248,127 +250,352 @@ router.post('/register-refuge', async (req, res) => {
   }
 });
 
-// ─── POST /api/auth/login-fa ──────────────────────────────────────────────────
-router.post('/login-fa', async (req, res) => {
-  const { email, password } = req.body;
+// ═══ CONNEXION ═══════════════════════════════════════════════════════════════
+// Journalisée ; verrouillage 15 minutes après 5 échecs ; alerte e-mail en cas
+// de connexion depuis un appareil ou une adresse IP inhabituels.
+
+const MSG_VERROU = 'Trop de tentatives sur ce compte. Pour votre sécurité, il est verrouillé 15 minutes.';
+
+async function connexion(req, res, type) {
+  const role = type === 'fa' ? 'fa' : 'refuge';
+  const email = String(req.body?.email || '').trim().toLowerCase();
+  const password = req.body?.password;
   if (!email || !password)
     return res.status(400).json({ message: 'Email et mot de passe requis.' });
 
   try {
+    if (await compteVerrouille(email)) {
+      journaliser(req, { evenement: 'connexion_refusee_verrou', email, role });
+      return res.status(429).json({ message: MSG_VERROU });
+    }
+
     const { data: authData, error: authError } = await clientEphemere().auth.signInWithPassword({ email, password });
-
-    if (authError)
+    if (authError) {
+      const bloque = authError.code === 'user_banned' || /banned/i.test(authError.message || '');
+      await journaliser(req, { evenement: bloque ? 'connexion_refusee_bloque' : 'connexion_echec', email, role });
+      if (bloque) return res.status(403).json({ message: 'Ce compte est bloqué ou clôturé. Contactez PetIA.' });
       return res.status(401).json({ message: 'Email ou mot de passe incorrect.' });
+    }
+    const user = authData.user;
 
-    const { data: fa, error } = await supabaseAdmin
-      .from('familles_accueil')
-      .select('*')
-      .eq('id', authData.user.id)
-      .single();
-
-    if (error || !fa)
+    const table = type === 'fa' ? 'familles_accueil' : 'refuges';
+    const { data: profil } = await supabaseAdmin.from(table).select('*').eq('id', user.id).maybeSingle();
+    if (!profil) {
+      await journaliser(req, { evenement: 'connexion_echec', user, role, details: { raison: 'profil_absent' } });
       return res.status(404).json({ message: 'Profil introuvable.' });
+    }
 
-    if (fa.statut_dossier === 'suspendu')
-      return res.status(403).json({ message: 'Votre compte a été suspendu.' });
+    const refus = profil.bloque_le ? 'Ce compte est bloqué. Contactez PetIA pour le débloquer.'
+      : profil.cloture_le ? 'Ce compte est clôturé.'
+      : (type === 'fa' ? profil.statut_dossier : profil.statut) === 'suspendu' ? 'Votre compte a été suspendu.'
+      : type === 'refuge' && profil.statut === 'refuse'
+        ? 'Votre inscription n\'a pas été retenue' + (profil.decision_motif ? ' : ' + profil.decision_motif.replace(/[.\s]+$/, '') + '.' : '.') + ' Contactez-nous pour en savoir plus.'
+      : null;
+    if (refus) {
+      await journaliser(req, { evenement: 'connexion_refusee_statut', user, role });
+      await supabaseAdmin.auth.admin.signOut(authData.session.access_token, 'local').catch(() => {});
+      return res.status(403).json({ message: refus });
+    }
 
     // Double authentification activée : on demande le code avant d'ouvrir la session
-    if (facteursActifs(authData.user).length)
+    if (facteursActifs(user).length) {
+      await journaliser(req, { evenement: 'connexion_mdp_ok_code_attendu', user, role });
       return res.json({ mfa_required: true, ticket: authData.session.access_token });
+    }
 
-    return res.json({
-      token: authData.session.access_token,
-      famille: pickFields(fa, FA_PUBLIC_FIELDS)
-    });
-
+    await journaliser(req, { evenement: 'connexion_reussie', user, role });
+    verifierNouvelAppareil(req, user);
+    noterActivite(table, profil).catch(() => {});
+    return res.json(type === 'fa'
+      ? { token: authData.session.access_token, famille: pickFields(profil, FA_PUBLIC_FIELDS) }
+      : { token: authData.session.access_token, refuge: pickFields(profil, REFUGE_PUBLIC_FIELDS) });
   } catch (err) {
-    console.error('login-fa error:', err);
+    console.error(`login-${type} error:`, err);
+    return res.status(500).json({ message: 'Erreur serveur.' });
+  }
+}
+
+router.post('/login-fa', (req, res) => connexion(req, res, 'fa'));
+router.post('/login-fourriere', (req, res) => connexion(req, res, 'refuge'));
+
+// ═══ MOT DE PASSE OUBLIÉ ═════════════════════════════════════════════════════
+// Lien PetIA valable 5 minutes, à usage unique (seule l'empreinte du jeton est
+// conservée) ; code Google Authenticator exigé si la double authentification
+// est activée ; fermeture de toutes les sessions ; e-mail d'alerte avec
+// « Ce n'était pas moi ». 3 demandes par heure maximum par e-mail et par IP.
+
+const DUREE_LIEN_MIN = 5;
+const MSG_DEMANDE = 'Si un compte existe avec cette adresse, un lien de réinitialisation valable 5 minutes vient de vous être envoyé.';
+
+async function trouverCompteParEmail(email) {
+  const motif = email.replace(/[\\%_]/g, c => '\\' + c);
+  for (const t of ['familles_accueil', 'refuges']) {
+    const { data } = await supabaseAdmin.from(t).select('id, email, prenom, nom, bloque_le, cloture_le').ilike('email', motif).limit(1);
+    if (data?.[0]) return { table: t, ...data[0] };
+  }
+  return null;
+}
+
+// ─── POST /api/auth/mot-de-passe/demande — { email } ─────────────────────────
+router.post('/mot-de-passe/demande', async (req, res) => {
+  const email = String(req.body?.email || '').trim().toLowerCase().slice(0, 200);
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return res.status(400).json({ message: 'Adresse e-mail invalide.' });
+  // Même réponse, au même moment, que le compte existe ou non
+  res.json({ message: MSG_DEMANDE });
+
+  try {
+    const [parEmail, parIp] = await Promise.all([
+      compter({ evenement: 'mdp_demande', email, minutes: 60 }),
+      compter({ evenement: 'mdp_demande', ipReq: ipDe(req), minutes: 60 }),
+    ]);
+    if (parEmail >= 3 || parIp >= 3)
+      return journaliser(req, { evenement: 'mdp_demande_ignoree', email, details: { raison: parEmail >= 3 ? 'limite_email' : 'limite_ip' } });
+    await journaliser(req, { evenement: 'mdp_demande', email });
+
+    const compte = await trouverCompteParEmail(email);
+    if (!compte || compte.bloque_le || compte.cloture_le) return;
+
+    const jeton = crypto.randomBytes(32).toString('base64url');
+    await supabaseAdmin.from('reinitialisations_mdp').delete().eq('user_id', compte.id).is('utilise_le', null);
+    const { error } = await supabaseAdmin.from('reinitialisations_mdp').insert({
+      user_id: compte.id, jeton_hash: hacher(jeton), ip: ipDe(req),
+      expire_le: new Date(Date.now() + DUREE_LIEN_MIN * 60000).toISOString(),
+    });
+    if (error) throw error;
+
+    await envoyerMail({
+      to: compte.email, subject: '🔐 Réinitialisation de votre mot de passe PetIA',
+      title: 'Réinitialisation<br>de votre mot de passe',
+      body: `Vous avez demandé à réinitialiser votre mot de passe. Le lien ci-dessous est valable <strong style="color:#fff;">${DUREE_LIEN_MIN} minutes</strong> et ne peut servir qu'une fois.`
+        + '<br><br>Si la double authentification est activée sur votre compte, le code Google Authenticator vous sera demandé.',
+      ctaText: 'Choisir un nouveau mot de passe →', ctaHref: `${SITE}/#mdp=${jeton}`,
+      footer: "Vous n'êtes pas à l'origine de cette demande ? Ignorez cet e-mail : votre mot de passe reste inchangé.",
+    });
+  } catch (e) {
+    console.error('mot-de-passe/demande error:', e);
+  }
+});
+
+// Demande de réinitialisation encore valable (sans la consommer)
+async function lireDemande(jeton) {
+  if (typeof jeton !== 'string' || jeton.length < 20 || jeton.length > 100) return null;
+  const { data } = await supabaseAdmin.from('reinitialisations_mdp')
+    .select('id, user_id, expire_le, utilise_le').eq('jeton_hash', hacher(jeton)).maybeSingle();
+  if (!data || data.utilise_le || new Date(data.expire_le).getTime() < Date.now()) return null;
+  return data;
+}
+const MSG_LIEN_INVALIDE = 'Ce lien n\'est plus valable (5 minutes, usage unique). Faites une nouvelle demande.';
+
+// ─── POST /api/auth/mot-de-passe/verifier — { jeton } ────────────────────────
+router.post('/mot-de-passe/verifier', async (req, res) => {
+  try {
+    const d = await lireDemande(req.body?.jeton);
+    if (!d) return res.status(410).json({ message: MSG_LIEN_INVALIDE });
+    const { data: u } = await supabaseAdmin.auth.admin.getUserById(d.user_id);
+    return res.json({ valide: true, mfa: facteursActifs(u?.user).length > 0,
+                      expire_dans: Math.max(0, Math.round((new Date(d.expire_le).getTime() - Date.now()) / 1000)) });
+  } catch (e) {
+    console.error('mot-de-passe/verifier error:', e);
     return res.status(500).json({ message: 'Erreur serveur.' });
   }
 });
 
-// ─── POST /api/auth/login-fourriere ──────────────────────────────────────────
-router.post('/login-fourriere', async (req, res) => {
-  const { email, password } = req.body;
-  if (!email || !password)
-    return res.status(400).json({ message: 'Email et mot de passe requis.' });
+// Après un changement de mot de passe : sessions fermées, alerte e-mail
+async function apresChangementMotDePasse(req, user, evenement) {
+  await fermerSessions({ email: user.email });
+  await journaliser(req, { evenement, user });
+  const lien = await creerLienBlocage(user.id);
+  await envoyerMail({
+    to: user.email, subject: '🔐 Votre mot de passe PetIA a été modifié',
+    title: 'Votre mot de passe<br>a été modifié',
+    body: `Le mot de passe de votre compte a été modifié le ${new Date().toLocaleString('fr-FR', { timeZone: 'Europe/Paris' })}. Toutes vos sessions ont été fermées.`
+      + '<br><br>Si vous n\'êtes pas à l\'origine de ce changement, bloquez immédiatement votre compte.',
+    ctaText: 'Ce n\'était pas moi : bloquer mon compte', ctaHref: lien || SITE, couleur: '#EF4444',
+    footer: 'Ce lien est valable 7 jours. Après blocage, contactez PetIA pour retrouver l\'accès à votre compte.',
+  });
+}
 
+// ─── POST /api/auth/mot-de-passe/nouveau — { jeton, mot_de_passe, code? } ────
+router.post('/mot-de-passe/nouveau', async (req, res) => {
   try {
-    const { data: authData, error: authError } = await clientEphemere().auth.signInWithPassword({ email, password });
+    const { jeton, mot_de_passe, code } = req.body || {};
+    const d = await lireDemande(jeton);
+    if (!d) return res.status(410).json({ message: MSG_LIEN_INVALIDE });
 
-    if (authError)
-      return res.status(401).json({ message: 'Email ou mot de passe incorrect.' });
+    const { data: u } = await supabaseAdmin.auth.admin.getUserById(d.user_id);
+    const user = u?.user;
+    if (!user) return res.status(410).json({ message: MSG_LIEN_INVALIDE });
+    const profils = await profilsDe(user.id);
+    if (profils.some(p => p.ligne.bloque_le || p.ligne.cloture_le))
+      return res.status(403).json({ message: 'Ce compte est bloqué ou clôturé. Contactez PetIA.' });
 
-    const { data: refuge, error } = await supabaseAdmin
-      .from('refuges')
-      .select('*')
-      .eq('id', authData.user.id)
-      .single();
+    const probleme = await verifierNouveauMotDePasse(mot_de_passe, user.email);
+    if (probleme) return res.status(400).json({ message: probleme });
 
-    if (error || !refuge)
-      return res.status(404).json({ message: 'Profil introuvable.' });
-
-    if (refuge.statut === 'suspendu')
-      return res.status(403).json({ message: 'Votre compte a été suspendu.' });
-    if (refuge.statut === 'refuse')
-      return res.status(403).json({ message: 'Votre inscription n\'a pas été retenue' + (refuge.decision_motif ? ' : ' + refuge.decision_motif.replace(/[.\s]+$/, '') + '.' : '.') + ' Contactez-nous pour en savoir plus.' });
-
-    if (facteursActifs(authData.user).length)
-      return res.json({ mfa_required: true, ticket: authData.session.access_token });
-
-    return res.json({
-      token: authData.session.access_token,
-      refuge: pickFields(refuge, REFUGE_PUBLIC_FIELDS)
-    });
-
-  } catch (err) {
-    console.error('login-fourriere error:', err);
-    return res.status(500).json({ message: 'Erreur serveur.' });
-  }
-});
-
-// ─── POST /api/auth/reset-password ───────────────────────────────────────────
-router.post('/reset-password', async (req, res) => {
-  const { email } = req.body;
-  if (!email) return res.status(400).json({ message: 'Email requis.' });
-
-  try {
-    const { data, error } = await supabaseAdmin.auth.admin.generateLink({
-      type: 'recovery',
-      email,
-      options: { redirectTo: 'https://petia-frontend.vercel.app?reset=true' }
-    });
-
-    if (!error && data?.properties?.action_link) {
+    // Double authentification : le code est exigé même avec le lien
+    const facteur = facteursActifs(user)[0];
+    if (facteur) {
+      if (!code) return res.status(400).json({ message: 'Saisissez le code Google Authenticator.', code: 'MFA_REQUIRED' });
       try {
-        await sendBrevoEmail({
-          to: email,
-          subject: '🔐 Réinitialisation de votre mot de passe PetIA',
-          htmlContent: buildEmail({
-            badge: '🔐', badgeColor: '#7C3AED',
-            label: 'Sécurité du compte', labelColor: '#7C3AED',
-            title: 'Réinitialisation<br>de votre mot de passe',
-            body: 'Vous avez demandé à réinitialiser votre mot de passe. Cliquez sur le bouton ci-dessous — le lien est valable <strong style="color:#fff;">1 heure</strong>.',
-            ctaText: 'Réinitialiser mon mot de passe →',
-            ctaHref: data.properties.action_link,
-            ctaColor: '#7C3AED', ctaShadow: 'rgba(124,58,237,.4)',
-            footer: "Si vous n'avez pas fait cette demande, ignorez cet email."
-          })
-        });
-      } catch (emailErr) {
-        console.error('Brevo reset email error:', emailErr.message);
+        const s = await sessionServeur(user.email);
+        await verifierCode(s.access_token, facteur.id, code);
+      } catch (e) {
+        await journaliser(req, { evenement: 'mdp_reinit_code_echec', user, cible_type: 'reinitialisation', cible_id: d.id });
+        if (await compter({ evenement: 'mdp_reinit_code_echec', cible_id: d.id, minutes: 10 }) >= 5)
+          await supabaseAdmin.from('reinitialisations_mdp').update({ utilise_le: new Date().toISOString() }).eq('id', d.id);
+        return res.status(401).json({ message: 'Code incorrect ou expiré.' });
       }
     }
 
-    return res.json({ message: 'Si cet email existe, un lien de réinitialisation vous a été envoyé.' });
+    // Usage unique, y compris si deux requêtes arrivent en même temps
+    const { data: pris } = await supabaseAdmin.from('reinitialisations_mdp')
+      .update({ utilise_le: new Date().toISOString() }).eq('id', d.id).is('utilise_le', null).select('id');
+    if (!pris?.length) return res.status(410).json({ message: MSG_LIEN_INVALIDE });
 
-  } catch (err) {
-    console.error('reset-password error:', err);
+    const { error } = await supabaseAdmin.auth.admin.updateUserById(user.id, { password: mot_de_passe });
+    if (error) throw error;
+    await apresChangementMotDePasse(req, user, 'mdp_reinitialise');
+    return res.json({ message: 'Mot de passe modifié. Toutes vos sessions ont été fermées : connectez-vous avec votre nouveau mot de passe.' });
+  } catch (e) {
+    console.error('mot-de-passe/nouveau error:', e);
     return res.status(500).json({ message: 'Erreur serveur.' });
   }
 });
 
+// ─── POST /api/auth/mot-de-passe/changer — { actuel, nouveau, code? } ────────
+// Depuis son espace : mot de passe actuel + code si la double authentification est activée
+router.post('/mot-de-passe/changer', requireUser, async (req, res) => {
+  try {
+    const { actuel, nouveau, code } = req.body || {};
+    if (!actuel || !nouveau) return res.status(400).json({ message: 'Mot de passe actuel et nouveau mot de passe requis.' });
+    if (await compteVerrouille(req.user.email)) return res.status(429).json({ message: MSG_VERROU });
 
+    const { data: v, error: e1 } = await clientEphemere().auth.signInWithPassword({ email: req.user.email, password: actuel });
+    if (e1 || !v?.session) {
+      await journaliser(req, { evenement: 'connexion_echec', user: req.user, details: { contexte: 'changement_mdp' } });
+      return res.status(401).json({ message: 'Mot de passe actuel incorrect.' });
+    }
+    const facteur = facteursActifs(req.user)[0];
+    if (facteur) {
+      if (!code) return res.status(400).json({ message: 'Saisissez le code Google Authenticator.', code: 'MFA_REQUIRED' });
+      try { await verifierCode(v.session.access_token, facteur.id, code); }
+      catch (e) {
+        await journaliser(req, { evenement: 'mfa_echec', user: req.user, details: { contexte: 'changement_mdp' } });
+        return res.status(401).json({ message: 'Code incorrect ou expiré.' });
+      }
+    }
+    if (actuel === nouveau) return res.status(400).json({ message: 'Le nouveau mot de passe doit être différent de l\'actuel.' });
+    const probleme = await verifierNouveauMotDePasse(nouveau, req.user.email);
+    if (probleme) return res.status(400).json({ message: probleme });
+
+    const { error } = await supabaseAdmin.auth.admin.updateUserById(req.user.id, { password: nouveau });
+    if (error) throw error;
+    await apresChangementMotDePasse(req, req.user, 'mdp_change');
+    return res.json({ message: 'Mot de passe modifié. Reconnectez-vous avec votre nouveau mot de passe.' });
+  } catch (e) {
+    console.error('mot-de-passe/changer error:', e);
+    return res.status(500).json({ message: 'Erreur serveur.' });
+  }
+});
+
+// ─── POST /api/auth/compte-bloque — { jeton } (« Ce n'était pas moi ») ───────
+router.post('/compte-bloque', async (req, res) => {
+  try {
+    const jeton = req.body?.jeton;
+    if (typeof jeton !== 'string' || jeton.length < 20 || jeton.length > 100)
+      return res.status(400).json({ message: 'Lien invalide.' });
+    const { data: j } = await supabaseAdmin.from('jetons_blocage')
+      .update({ utilise_le: new Date().toISOString() })
+      .eq('jeton_hash', hacher(jeton)).is('utilise_le', null).gt('expire_le', new Date().toISOString())
+      .select('user_id');
+    if (!j?.length) return res.status(410).json({ message: 'Ce lien n\'est plus valable. Contactez PetIA si vous pensez que votre compte est utilisé par quelqu\'un d\'autre.' });
+
+    const { data: u } = await supabaseAdmin.auth.admin.getUserById(j[0].user_id);
+    if (!u?.user) return res.status(410).json({ message: 'Compte introuvable.' });
+    await bloquerCompte(u.user.id, u.user.email);
+    await journaliser(req, { evenement: 'compte_bloque_par_utilisateur', user: u.user });
+    await alerterAdmins(req, {
+      evenement: 'alerte_compte_bloque', sujet: 'Un utilisateur a bloqué son compte',
+      message: `Le compte <strong style="color:#fff;">${esc(u.user.email)}</strong> a été bloqué par son titulaire (« Ce n'était pas moi »). Contactez la personne pour vérifier son identité avant de débloquer le compte depuis l'espace admin.`,
+      details: { compte: u.user.id },
+    });
+    return res.json({ message: 'Votre compte est bloqué et toutes les sessions sont fermées. L\'équipe PetIA a été prévenue et vous recontactera pour rétablir l\'accès.' });
+  } catch (e) {
+    console.error('compte-bloque error:', e);
+    return res.status(500).json({ message: 'Erreur serveur.' });
+  }
+});
+
+// ═══ SESSIONS ET CLÔTURE ═════════════════════════════════════════════════════
+
+// ─── POST /api/auth/sessions/fermer — déconnecter tous mes appareils ─────────
+router.post('/sessions/fermer', requireUser, async (req, res) => {
+  const ok = await fermerSessions({ token: req.token });
+  await journaliser(req, { evenement: 'sessions_fermees', user: req.user });
+  if (!ok) return res.status(500).json({ message: 'Impossible de fermer les sessions, réessayez.' });
+  return res.json({ message: 'Toutes vos sessions sont fermées, y compris celle-ci.' });
+});
+
+// ─── POST /api/auth/cloturer — { mot_de_passe } ──────────────────────────────
+// Fermeture du compte par la FA ou le refuge. Les données sont supprimées
+// automatiquement 2 ans après la clôture (ou plus tôt sur demande au DPO).
+router.post('/cloturer', requireUser, async (req, res) => {
+  try {
+    if (!req.body?.mot_de_passe) return res.status(400).json({ message: 'Confirmez avec votre mot de passe.' });
+    const { error: e1 } = await clientEphemere().auth.signInWithPassword({ email: req.user.email, password: req.body.mot_de_passe });
+    if (e1) {
+      await journaliser(req, { evenement: 'connexion_echec', user: req.user, details: { contexte: 'cloture' } });
+      return res.status(401).json({ message: 'Mot de passe incorrect.' });
+    }
+
+    const maintenant = new Date().toISOString();
+    for (const p of req.profils || []) {
+      if (p.table === 'familles_accueil') {
+        const { count } = await supabaseAdmin.from('matchs').select('id', { count: 'exact', head: true })
+          .eq('famille_id', req.user.id).eq('statut', 'en_cours');
+        if (count) return res.status(409).json({ message: 'Un accueil est en cours : le refuge doit d\'abord en confirmer la fin.' });
+      } else {
+        const { data: animaux } = await supabaseAdmin.from('animaux').select('id').eq('refuge_id', req.user.id);
+        const ids = (animaux || []).map(a => a.id);
+        if (ids.length) {
+          const { count } = await supabaseAdmin.from('matchs').select('id', { count: 'exact', head: true })
+            .in('animal_id', ids).eq('statut', 'en_cours');
+          if (count) return res.status(409).json({ message: 'Des animaux sont en accueil : confirmez d\'abord la fin de ces accueils.' });
+        }
+      }
+    }
+
+    for (const p of req.profils || []) {
+      if (p.table === 'familles_accueil') {
+        await supabaseAdmin.from('matchs').update({ statut: 'annule', updated_at: maintenant })
+          .eq('famille_id', req.user.id).in('statut', ['propose', 'accepte']);
+      } else {
+        const { data: animaux } = await supabaseAdmin.from('animaux').select('id').eq('refuge_id', req.user.id);
+        const ids = (animaux || []).map(a => a.id);
+        if (ids.length) await supabaseAdmin.from('matchs').update({ statut: 'annule', updated_at: maintenant })
+          .in('animal_id', ids).in('statut', ['propose', 'accepte']);
+      }
+      await supabaseAdmin.from(p.table).update({ cloture_le: maintenant }).eq('id', req.user.id);
+    }
+
+    await fermerSessions({ token: req.token });
+    await supabaseAdmin.auth.admin.updateUserById(req.user.id, { ban_duration: '876000h' });
+    await journaliser(req, { evenement: 'compte_cloture', user: req.user });
+
+    const suppression = new Date(Date.now() + 730 * 86400000).toLocaleDateString('fr-FR', { timeZone: 'Europe/Paris' });
+    envoyerMail({
+      to: req.user.email, subject: 'Votre compte PetIA est clôturé', badge: '👋', couleur: '#64748B', label: 'Clôture du compte',
+      title: 'Votre compte<br>est clôturé',
+      body: `Votre compte PetIA a été clôturé à votre demande. Vos données seront supprimées définitivement le <strong style="color:#fff;">${suppression}</strong> au plus tard.`
+        + '<br><br>Vous pouvez demander leur suppression immédiate en écrivant à notre délégué à la protection des données.',
+      ctaText: 'Contacter PetIA →', ctaHref: 'mailto:contact@petia.fr',
+    });
+    return res.json({ message: 'Votre compte est clôturé.', suppression_prevue: suppression });
+  } catch (e) {
+    console.error('cloturer error:', e);
+    return res.status(500).json({ message: 'Erreur serveur.' });
+  }
+});
 
 // ─── POST /api/auth/refuge-validated ──────────────────────────────────────────
 // À appeler depuis le dashboard admin quand un dossier refuge est validé
@@ -429,7 +656,17 @@ router.post('/refuge-rejected', requireAdmin, async (req, res) => {
 });
 
 // ─── POST /api/auth/logout ────────────────────────────────────────────────────
+// Ferme la session de cet appareil (le jeton ne fonctionne plus ensuite)
 router.post('/logout', async (req, res) => {
+  const auth = req.headers.authorization || '';
+  if (auth.startsWith('Bearer ')) {
+    const token = auth.slice(7);
+    const { data } = await supabaseAdmin.auth.getUser(token).catch(() => ({ data: {} }));
+    if (data?.user) {
+      await supabaseAdmin.auth.admin.signOut(token, 'local').catch(() => {});
+      await journaliser(req, { evenement: 'deconnexion', user: data.user });
+    }
+  }
   return res.json({ message: 'Déconnexion effectuée.' });
 });
 
@@ -449,14 +686,23 @@ router.post('/mfa/login', async (req, res) => {
     if (error || !user) return res.status(401).json({ message: 'Session expirée, reconnectez-vous.' });
     const facteur = facteursActifs(user)[0];
     if (!facteur) return res.status(400).json({ message: 'Double authentification non activée.' });
+    if (await compteVerrouille(user.email)) return res.status(429).json({ message: MSG_VERROU });
 
     let session;
     try { session = await verifierCode(ticket, facteur.id, code); }
-    catch (e) { return res.status(401).json({ message: messageCode(e) }); }
+    catch (e) {
+      await journaliser(req, { evenement: 'mfa_echec', user, role: type });
+      return res.status(401).json({ message: messageCode(e) });
+    }
 
     const table = type === 'fa' ? 'familles_accueil' : 'refuges';
     const { data: profil } = await supabaseAdmin.from(table).select('*').eq('id', user.id).single();
     if (!profil) return res.status(404).json({ message: 'Profil introuvable.' });
+    if (profil.bloque_le || profil.cloture_le) return res.status(403).json({ message: 'Ce compte est bloqué ou clôturé. Contactez PetIA.' });
+
+    await journaliser(req, { evenement: 'connexion_reussie', user, role: type, details: { mfa: true } });
+    verifierNouvelAppareil(req, user);
+    noterActivite(table, profil).catch(() => {});
 
     return res.json(type === 'fa'
       ? { token: session.access_token, famille: pickFields(profil, FA_PUBLIC_FIELDS) }
@@ -498,6 +744,7 @@ router.post('/mfa/confirmer', requireUser, async (req, res) => {
   if (!factor_id || !code) return res.status(400).json({ message: 'Code requis.' });
   try {
     const session = await verifierCode(req.token, factor_id, code);
+    await journaliser(req, { evenement: 'mfa_active', user: req.user });
     return res.json({ token: session.access_token });
   } catch (e) {
     return res.status(400).json({ message: messageCode(e) });
@@ -514,6 +761,7 @@ router.post('/mfa/desactiver', requireUser, async (req, res) => {
     try { session = await verifierCode(req.token, facteur.id, req.body.code); }
     catch (e) { return res.status(400).json({ message: messageCode(e) }); }
     await gotrue(`/factors/${facteur.id}`, { method: 'DELETE', token: session.access_token });
+    await journaliser(req, { evenement: 'mfa_desactive', user: req.user });
     return res.json({ token: session.access_token });
   } catch (e) {
     console.error('mfa/desactiver error:', e);

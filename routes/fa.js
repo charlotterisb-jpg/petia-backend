@@ -9,6 +9,7 @@ const router = express.Router();
 const { createClient } = require('@supabase/supabase-js');
 const { requireUser } = require('../middleware/session');
 const { nettoyerProfil, nettoyerQuestionnaire, lireJetonInscription } = require('../services/profilFA');
+const { journaliser } = require('../services/journal');
 
 const supabaseAdmin = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_KEY);
 
@@ -38,6 +39,7 @@ router.put('/questionnaire', identifierFamille, async (req, res) => {
 
     const { error } = await supabaseAdmin.from('familles_accueil').update(maj).eq('id', fa.id);
     if (error) throw error;
+    journaliser(req, { evenement: 'questionnaire_envoye', userId: fa.id, role: 'fa' });
     return res.json({ message: 'Questionnaire enregistré.', statut_dossier: maj.statut_dossier || fa.statut_dossier });
   } catch (e) {
     console.error('PUT /fa/questionnaire error:', e);
@@ -96,7 +98,7 @@ const COLONNES_ANIMAL_FA =
   'id, nom, espece, sous_espece, race, age_annees, age_mois, sexe, poids_kg, sterilise, urgence, statut, ' +
   'compatible_enfants, compatible_chiens, compatible_chats, temps_seul_max, balades_min_jour, niveau_exercice, ' +
   'description, comportement, historique, besoins_specifiques, details, photo_url, ' +
-  'refuge:refuges(nom, ville, code_postal, telephone, email, statut)';
+  'refuge:refuges(nom, ville, code_postal, telephone, email, statut, cloture_le, bloque_le)';
 
 // ─── GET /api/fa/propositions ────────────────────────────────────────────────
 // Uniquement les propositions validées par le refuge (et la suite de l'accueil)
@@ -111,8 +113,8 @@ router.get('/propositions', requireFamille, async (req, res) => {
       .order('updated_at', { ascending: false });
     if (error) throw error;
     // Les animaux d'un refuge suspendu ou refusé n'apparaissent plus
-    const propositions = (data || []).filter(m => m.animal?.refuge?.statut === 'actif').map(m => {
-      if (m.animal?.refuge) delete m.animal.refuge.statut;
+    const propositions = (data || []).filter(m => m.animal?.refuge?.statut === 'actif' && !m.animal.refuge.cloture_le && !m.animal.refuge.bloque_le).map(m => {
+      if (m.animal?.refuge) { delete m.animal.refuge.statut; delete m.animal.refuge.cloture_le; delete m.animal.refuge.bloque_le; }
       if (m.animal?.details?.commun) {
         const { puce, ...commun } = m.animal.details.commun;
         m.animal.details = { ...m.animal.details, commun };
@@ -141,6 +143,7 @@ router.patch('/propositions/:id', requireFamille, async (req, res) => {
     const { error } = await supabaseAdmin.from('matchs')
       .update({ reponse_fa: reponse, date_reponse_fa: maintenant, updated_at: maintenant }).eq('id', m.id);
     if (error) throw error;
+    journaliser(req, { evenement: 'proposition_' + reponse, user: req.user, role: 'fa', cible_type: 'match', cible_id: m.id });
     return res.json({ message: reponse === 'oui' ? 'Proposition acceptée.' : 'Proposition déclinée.', reponse_fa: reponse });
   } catch (e) {
     console.error('PATCH /fa/propositions error:', e);
