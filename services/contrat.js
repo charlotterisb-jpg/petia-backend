@@ -40,6 +40,12 @@ function rediger({ refuge: r, famille: f, animal: a, match: m }) {
   const referent = [[r.contact_prenom, r.contact_nom].filter(Boolean).join(' '), r.contact_fonction].filter(Boolean).join(', ');
   const c = a.details?.commun || {};
   const mod = m.modalites || {};
+  const cond = r.details?.conditions || {};
+  const NOURRITURE = { refuge_fournit: "La nourriture est fournie par l'Association.", rembourse: "La nourriture est achetée par la Famille d'Accueil et remboursée par l'Association sur présentation des justificatifs.", famille: "La nourriture est à la charge de la Famille d'Accueil." };
+  const VETO = { refuge_100: "Les frais vétérinaires sont intégralement pris en charge par l'Association.", refuge_sur_accord: "Les frais vétérinaires sont pris en charge par l'Association, après son accord préalable sauf urgence.", partage: "Les frais vétérinaires sont répartis entre les parties selon les modalités convenues avec l'Association." };
+  const TRANSPORT = { refuge: "Les trajets liés à l'accueil (vétérinaire, visites) sont assurés ou remboursés par l'Association.", famille: "Les trajets liés à l'accueil sont à la charge de la Famille d'Accueil.", selon_cas: "La prise en charge des trajets est convenue au cas par cas avec l'Association." };
+  const MATERIEL_TXT = { laisse: 'laisse et collier ou harnais', gamelles: 'gamelles', couchage: 'couchage', caisse: 'caisse de transport', jouets: 'jouets', litiere: 'litière et bac', cage: 'cage ou enclos' };
+  const veto = [cond.veto_nom, cond.veto_adresse, cond.veto_telephone].filter(Boolean).map(sansEmoji).join(', ');
   const particularites = [a.besoins_specifiques, a.description && 'Consignes : ' + a.description, c.problemes_sante?.length && 'Santé : ' + c.problemes_sante.join(', ')]
     .filter(Boolean).map(sansEmoji).join(' ; ') || 'aucune signalée';
 
@@ -70,13 +76,19 @@ function rediger({ refuge: r, famille: f, animal: a, match: m }) {
         "Veiller à la sécurité de l'animal et empêcher toute fugue ; respecter les consignes de l'Association propres à cet animal.",
         "Donner régulièrement des nouvelles de l'animal et répondre aux sollicitations de l'Association dans un délai raisonnable.",
         "Il est interdit de céder ou de confier l'animal à un tiers sans accord écrit de l'Association.",
+        ...(cond.regles ? ['Règles propres à l\'Association : ' + sansEmoji(cond.regles)] : []),
       ] },
       { titre: 'Article 4 — Prise en charge des frais', paragraphes: [
-        "Les frais vétérinaires prescrits ou validés par l'Association sont à sa charge, selon les modalités qu'elle communique à la Famille d'Accueil. Les modalités de prise en charge de l'alimentation et du matériel sont précisées par l'Association avant la remise de l'animal.",
-        "Aucune indemnité n'est due à la Famille d'Accueil, sauf accord écrit contraire.",
+        VETO[cond.veterinaire] || "Les frais vétérinaires prescrits ou validés par l'Association sont à sa charge, selon les modalités qu'elle communique à la Famille d'Accueil.",
+        NOURRITURE[cond.nourriture] || "Les modalités de prise en charge de l'alimentation sont précisées par l'Association avant la remise de l'animal.",
+        cond.materiel?.length ? "L'Association fournit le matériel suivant, qui reste sa propriété : " + cond.materiel.map(x => MATERIEL_TXT[x]).join(', ') + '.' : "Le matériel nécessaire est précisé par l'Association avant la remise de l'animal.",
+        ...(TRANSPORT[cond.transport] ? [TRANSPORT[cond.transport]] : []),
+        cond.indemnite ? 'Indemnité : ' + sansEmoji(cond.indemnite) + '.' : "Aucune indemnité n'est due à la Famille d'Accueil, sauf accord écrit contraire.",
       ] },
       { titre: 'Article 5 — Santé et urgences', paragraphes: [
         "La Famille d'Accueil suit les prescriptions en cours. En cas d'urgence médicale, elle conduit immédiatement l'animal chez un vétérinaire et prévient l'Association dans les 2 heures.",
+        ...(veto ? ['Vétérinaire partenaire de l\'Association : ' + veto + '.'] : []),
+        ...(cond.urgence ? ['En cas d\'urgence, notamment la nuit et le week-end : ' + sansEmoji(cond.urgence) + '.'] : []),
         "Elle prévient également l'Association dans les 2 heures en cas de fugue, morsure, comportement agressif inhabituel ou impossibilité de poursuivre l'accueil.",
         `Contact de l'Association : ${[referent, r.telephone, r.email].filter(Boolean).join(' · ') || 'coordonnées disponibles sur PetIA'}.`,
       ] },
@@ -103,7 +115,7 @@ const empreinte = (contenu) => crypto.createHash('sha256').update(contenu, 'utf8
 // ─── Lecture / création ──────────────────────────────────────────────────────
 async function donneesMatch(matchId) {
   const { data: m } = await supabase.from('matchs')
-    .select('id, statut, reponse_fa, modalites, famille_id, animal:animaux(*, refuge:refuges(id, nom, type_structure, siret, adresse, code_postal, ville, telephone, email, contact_prenom, contact_nom, contact_fonction))')
+    .select('id, statut, reponse_fa, modalites, famille_id, animal:animaux(*, refuge:refuges(id, nom, type_structure, siret, adresse, code_postal, ville, telephone, email, contact_prenom, contact_nom, contact_fonction, details))')
     .eq('id', matchId).maybeSingle();
   if (!m) return null;
   const { data: f } = await supabase.from('familles_accueil').select('id, prenom, nom, adresse, code_postal, ville, email, telephone').eq('id', m.famille_id).maybeSingle();

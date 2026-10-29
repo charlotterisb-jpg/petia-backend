@@ -71,6 +71,7 @@ app.use('/api/matching', require('./routes/matching'));
 app.use('/api/auth', require('./routes/auth'));
 app.use('/api/admin', require('./routes/admin'));
 app.use('/api/fa', require('./routes/fa'));
+app.use('/api/refuge', require('./routes/refuge'));
 
 // Erreurs : jamais de détail technique renvoyé au navigateur
 app.use((err, req, res, next) => {
