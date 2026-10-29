@@ -45,7 +45,9 @@ app.use((req, res, next) => {
   next();
 });
 
-app.use(express.json({ limit: '200kb' }));
+// Dépôt de document (fichier encodé, 5 Mo maximum) : seule route acceptant un corps plus lourd
+const jsonDocument = express.json({ limit: '8mb' }), jsonNormal = express.json({ limit: '200kb' });
+app.use((req, res, next) => (req.method === 'POST' && req.path === '/api/fa/documents' ? jsonDocument : jsonNormal)(req, res, next));
 
 // Limites de requêtes par adresse IP
 const messageLimite = { message: 'Trop de requêtes. Réessayez dans quelques minutes.' };

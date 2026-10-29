@@ -129,6 +129,7 @@ async function supprimerPersonne(userId, emailConnu) {
     email = email || p.ligne.email;
     if (p.table === 'familles_accueil') {
       await supabaseAdmin.from('evaluations').delete().eq('famille_id', userId);
+      bilan.documents = await require('./documents').supprimerTousLesDocuments(userId);
     } else {
       await supabaseAdmin.from('evaluations').delete().eq('refuge_id_eval', userId);
       const { data: animaux } = await supabaseAdmin.from('animaux').select('id').eq('refuge_id', userId);

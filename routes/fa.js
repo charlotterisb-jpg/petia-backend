@@ -141,6 +141,10 @@ router.get('/propositions', requireFamille, async (req, res) => {
     const ids = (data || []).map(m => m.id);
     const { data: cs } = ids.length ? await supabaseAdmin.from('contrats').select('match_id, statut, fa_signe_le, refuge_signe_le').in('match_id', ids) : { data: [] };
     const contrats = Object.fromEntries((cs || []).map(c => [c.match_id, c]));
+    const { data: dd } = ids.length ? await supabaseAdmin.from('demandes_documents')
+      .select('id, match_id, type, libelle, obligatoire, statut, motif_refus, document:documents_fa(id, libelle)').in('match_id', ids).order('cree_le') : { data: [] };
+    const demandes = {};
+    for (const d of dd || []) (demandes[d.match_id] = demandes[d.match_id] || []).push(d);
     // Les animaux d'un refuge suspendu ou refusé n'apparaissent plus
     const propositions = (data || []).filter(m => m.animal?.refuge?.statut === 'actif' && !m.animal.refuge.cloture_le && !m.animal.refuge.bloque_le).map(m => {
       if (m.animal?.refuge) {
@@ -155,7 +159,7 @@ router.get('/propositions', requireFamille, async (req, res) => {
       }
       // Coordonnées du refuge seulement une fois la proposition acceptée
       if (m.animal?.refuge && m.reponse_fa !== 'oui') CONTACT_REFUGE.forEach(k => delete m.animal.refuge[k]);
-      return { ...m, resume_ia: m.details_score?.resume_ia || null, details_score: undefined, contrat: contrats[m.id] || null };
+      return { ...m, resume_ia: m.details_score?.resume_ia || null, details_score: undefined, contrat: contrats[m.id] || null, documents: demandes[m.id] || [] };
     });
     return res.json({ propositions });
   } catch (e) {
@@ -181,6 +185,7 @@ router.patch('/propositions/:id', requireFamille, async (req, res) => {
     // Acceptation : le contrat est préparé tout de suite, la famille le signe dans la foulée
     if (reponse === 'oui') {
       await obtenirContrat(m.id).catch(e => console.error('Création contrat:', e.message));
+      await require('../services/documents').creerDemandesParDefaut(m.id).catch(e => console.error('Demandes documents:', e.message));
       notifierRefuge(m.id, 'acceptation').catch(() => {});
     }
     return res.json({ message: reponse === 'oui' ? 'Proposition acceptée.' : 'Proposition déclinée.', reponse_fa: reponse });
@@ -234,6 +239,8 @@ router.post('/contrats/:matchId/signer', requireFamille, async (req, res) => {
     if (!c) return res.status(409).json({ message: 'Contrat indisponible.' });
     if (c.statut !== 'a_signer_fa') return res.status(409).json({ message: 'Vous avez déjà signé ce contrat.' });
     if (!integre(c)) return res.status(409).json({ message: 'Le contrat a été altéré : contactez PetIA.' });
+    const manquants = await require('../services/documents').obligatoiresManquants(m.id);
+    if (manquants.length) return res.status(409).json({ message: 'Documents obligatoires à fournir et à faire valider par le refuge avant de signer : ' + manquants.join(', ') + '.' });
     const conf = req.body?.confirmations;
     if (!Array.isArray(conf) || conf.length !== CONFIRMATIONS_FA.length || !conf.every(x => x === true))
       return res.status(400).json({ message: 'Cochez toutes les déclarations.' });
@@ -270,6 +277,79 @@ router.get('/contrats/:matchId/pdf', requireFamille, async (req, res) => {
   } catch (e) {
     console.error('GET /fa/contrats/pdf error:', e);
     if (!res.headersSent) res.status(500).json({ message: 'Erreur serveur.' });
+  }
+});
+
+// ═══ COFFRE-FORT DE DOCUMENTS (famille) ══════════════════════════════════════
+const docs = require('../services/documents');
+
+router.get('/documents', requireFamille, async (req, res) => {
+  const { data, error } = await supabaseAdmin.from('documents_fa').select('id, type, libelle, mime, taille, depose_le').eq('famille_id', req.famId).order('depose_le', { ascending: false });
+  if (error) { console.error('GET /fa/documents error:', error); return res.status(500).json({ message: 'Erreur serveur.' }); }
+  return res.json({ documents: data || [], types: docs.TYPES_DOC });
+});
+
+// { type, libelle?, base64, demande_id? } — dépôt, et rattachement direct à une demande si précisé
+router.post('/documents', requireFamille, async (req, res) => {
+  try {
+    const { count } = await supabaseAdmin.from('documents_fa').select('id', { count: 'exact', head: true }).eq('famille_id', req.famId);
+    if (count >= 30) return res.status(400).json({ message: 'Coffre-fort plein (30 documents) : supprimez d\'anciens documents.' });
+    const doc = await docs.deposer(req.famId, req.body || {});
+    journaliser(req, { evenement: 'document_depose', user: req.user, role: 'fa', cible_type: 'document', cible_id: doc.id, details: { type: doc.type } });
+    if (req.body?.demande_id) await rattacher(req, req.body.demande_id, doc.id).catch(() => {});
+    return res.status(201).json({ document: doc });
+  } catch (e) {
+    if (e.status === 400) return res.status(400).json({ message: e.message });
+    console.error('POST /fa/documents error:', e);
+    return res.status(500).json({ message: 'Erreur lors du dépôt.' });
+  }
+});
+
+router.delete('/documents/:id', requireFamille, async (req, res) => {
+  try {
+    const { data } = await supabaseAdmin.from('documents_fa').select('id, chemin').eq('id', req.params.id).eq('famille_id', req.famId);
+    if (!data?.length) return res.status(404).json({ message: 'Document introuvable.' });
+    await docs.supprimerDocuments(data);
+    journaliser(req, { evenement: 'document_supprime', user: req.user, role: 'fa', cible_type: 'document', cible_id: req.params.id });
+    return res.json({ message: 'Document supprimé.' });
+  } catch (e) {
+    console.error('DELETE /fa/documents error:', e);
+    return res.status(500).json({ message: 'Erreur serveur.' });
+  }
+});
+
+router.get('/documents/:id/lien', requireFamille, async (req, res) => {
+  try {
+    const { data } = await supabaseAdmin.from('documents_fa').select('chemin').eq('id', req.params.id).eq('famille_id', req.famId).maybeSingle();
+    if (!data) return res.status(404).json({ message: 'Document introuvable.' });
+    return res.json({ url: await docs.lienSigne(data.chemin) });
+  } catch (e) {
+    console.error('GET /fa/documents/lien error:', e);
+    return res.status(500).json({ message: 'Erreur serveur.' });
+  }
+});
+
+// Joindre un document du coffre-fort à une demande du refuge (= le partager avec ce refuge)
+async function rattacher(req, demandeId, documentId) {
+  const { data: d } = await supabaseAdmin.from('demandes_documents').select('id, statut, match:matchs(famille_id)').eq('id', demandeId).maybeSingle();
+  if (!d || d.match?.famille_id !== req.famId) throw Object.assign(new Error('Demande introuvable.'), { status: 404 });
+  if (d.statut === 'valide') throw Object.assign(new Error('Ce document a déjà été validé par le refuge.'), { status: 409 });
+  const { data: doc } = await supabaseAdmin.from('documents_fa').select('id').eq('id', documentId).eq('famille_id', req.famId).maybeSingle();
+  if (!doc) throw Object.assign(new Error('Document introuvable.'), { status: 404 });
+  const { error } = await supabaseAdmin.from('demandes_documents')
+    .update({ document_id: doc.id, statut: 'fourni', motif_refus: null, maj_le: new Date().toISOString() }).eq('id', d.id);
+  if (error) throw error;
+  journaliser(req, { evenement: 'document_partage', user: req.user, role: 'fa', cible_type: 'demande_document', cible_id: d.id });
+}
+
+router.patch('/demandes/:id', requireFamille, async (req, res) => {
+  try {
+    await rattacher(req, req.params.id, req.body?.document_id);
+    return res.json({ message: 'Document transmis au refuge.' });
+  } catch (e) {
+    if (e.status) return res.status(e.status).json({ message: e.message });
+    console.error('PATCH /fa/demandes error:', e);
+    return res.status(500).json({ message: 'Erreur serveur.' });
   }
 });
 

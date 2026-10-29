@@ -410,6 +410,8 @@ async function inventaire(id) {
     jetons: { reinitialisation_mdp: 0, blocage: 0 },
     contrats: [],
     notes_suivi: [],
+    documents: [],
+    demandes_documents: [],
   };
   const { data: fa } = await supabaseAdmin.from('familles_accueil').select('*').eq('id', id).maybeSingle();
   if (fa) {
@@ -446,6 +448,14 @@ async function inventaire(id) {
     const { data: nr } = await supabaseAdmin.from('suivi_notes').select('id, animal_id, match_id, texte, cree_le').in('animal_id', inv.animaux.map(a => a.id));
     const deja = new Set(inv.notes_suivi.map(n => n.id));
     inv.notes_suivi = inv.notes_suivi.concat((nr || []).filter(n => !deja.has(n.id)));
+  }
+  if (fa) {
+    const { data: dfa } = await supabaseAdmin.from('documents_fa').select('id, type, libelle, mime, taille, empreinte, depose_le').eq('famille_id', id);
+    inv.documents = dfa || [];
+  }
+  if (matchIds.length) {
+    const { data: dd } = await supabaseAdmin.from('demandes_documents').select('id, match_id, type, libelle, obligatoire, statut, motif_refus, document_id, cree_le').in('match_id', matchIds);
+    inv.demandes_documents = dd || [];
   }
   const email = (user?.email || fa?.email || ref?.email || '').toLowerCase();
   const filtre = email ? `user_id.eq.${id},email.eq."${email.replace(/["\\,()]/g, '')}"` : `user_id.eq.${id}`;

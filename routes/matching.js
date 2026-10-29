@@ -54,9 +54,13 @@ async function listerMatchs(animalId) {
   const ids = (data || []).map(m => m.id);
   const { data: cs } = ids.length ? await supabase.from('contrats').select('match_id, statut, fa_signe_le, refuge_signe_le').in('match_id', ids) : { data: [] };
   const contrats = Object.fromEntries((cs || []).map(c => [c.match_id, c]));
+  const { data: dd } = ids.length ? await supabase.from('demandes_documents')
+    .select('id, match_id, type, libelle, obligatoire, statut, motif_refus, maj_le, document:documents_fa(id, libelle, mime, taille)').in('match_id', ids).order('cree_le') : { data: [] };
+  const demandes = {};
+  for (const d of dd || []) (demandes[d.match_id] = demandes[d.match_id] || []).push(d);
   return (data || []).map(m => {
     if (m.famille && !(m.reponse_fa === 'oui' && ['accepte', 'en_cours', 'termine'].includes(m.statut))) CONTACT_FAMILLE.forEach(k => delete m.famille[k]);
-    return { ...m, contrat: contrats[m.id] || null };
+    return { ...m, contrat: contrats[m.id] || null, documents: demandes[m.id] || [] };
   });
 }
 
@@ -316,6 +320,82 @@ router.get('/match/:matchId/contrat/pdf', requireAuth, async (req, res) => {
   } catch (e) {
     console.error('GET /matching/contrat/pdf error:', e);
     if (!res.headersSent) res.status(500).json({ message: 'Erreur serveur.' });
+  }
+});
+
+// ═══ DOCUMENTS DEMANDÉS À LA FAMILLE (refuge) ═══════════════════════════════
+const docs = require('../services/documents');
+
+async function demandeDuRefuge(demandeId, refugeId) {
+  const { data: d } = await supabase.from('demandes_documents')
+    .select('id, statut, match_id, document:documents_fa(id, chemin)').eq('id', demandeId).maybeSingle();
+  if (!d) return null;
+  const r = await matchDuRefuge(d.match_id, refugeId);
+  return r ? { d, ...r } : null;
+}
+
+// { type, libelle?, obligatoire? } — demande ponctuelle pour cet accueil
+router.post('/match/:matchId/documents', requireAuth, async (req, res) => {
+  try {
+    const r = await matchDuRefuge(req.params.matchId, req.user.id);
+    if (!r) return res.status(404).json({ message: 'Match introuvable.' });
+    if (!['accepte', 'en_cours'].includes(r.m.statut)) return res.status(409).json({ message: 'Les documents se demandent pour un accueil en préparation ou en cours.' });
+    const type = docs.TYPES_DOC[req.body?.type] ? req.body.type : null;
+    if (!type) return res.status(400).json({ message: 'Type de document invalide.' });
+    const libelle = (typeof req.body?.libelle === 'string' && req.body.libelle.trim() ? req.body.libelle.trim() : docs.TYPES_DOC[type]).slice(0, 150);
+    const { data, error } = await supabase.from('demandes_documents')
+      .insert({ match_id: r.m.id, type, libelle, obligatoire: req.body?.obligatoire !== false }).select('id').single();
+    if (error) throw error;
+    journaliser(req, { evenement: 'document_demande', user: req.user, role: 'refuge', cible_type: 'match', cible_id: r.m.id, details: { type } });
+    return res.status(201).json({ message: 'Document demandé à la famille.', id: data.id });
+  } catch (e) {
+    console.error('POST /matching/documents error:', e);
+    return res.status(500).json({ message: 'Erreur serveur.' });
+  }
+});
+
+// { decision: 'valide' | 'refuse', motif? }
+router.patch('/documents/:demandeId', requireAuth, async (req, res) => {
+  try {
+    const r = await demandeDuRefuge(req.params.demandeId, req.user.id);
+    if (!r) return res.status(404).json({ message: 'Demande introuvable.' });
+    const decision = req.body?.decision;
+    if (!['valide', 'refuse'].includes(decision)) return res.status(400).json({ message: 'Décision invalide.' });
+    if (r.d.statut !== 'fourni' && !(decision === 'refuse' && r.d.statut === 'valide')) return res.status(409).json({ message: 'Aucun document à examiner pour cette demande.' });
+    const motif = decision === 'refuse' ? String(req.body?.motif || '').trim().slice(0, 500) : null;
+    if (decision === 'refuse' && !motif) return res.status(400).json({ message: 'Indiquez le motif du refus pour la famille.' });
+    const { error } = await supabase.from('demandes_documents').update({ statut: decision, motif_refus: motif, maj_le: new Date().toISOString() }).eq('id', r.d.id);
+    if (error) throw error;
+    journaliser(req, { evenement: 'document_' + decision, user: req.user, role: 'refuge', cible_type: 'demande_document', cible_id: r.d.id });
+    return res.json({ message: decision === 'valide' ? 'Document validé.' : 'Document refusé : la famille est invitée à en fournir un autre.' });
+  } catch (e) {
+    console.error('PATCH /matching/documents error:', e);
+    return res.status(500).json({ message: 'Erreur serveur.' });
+  }
+});
+
+router.delete('/documents/:demandeId', requireAuth, async (req, res) => {
+  try {
+    const r = await demandeDuRefuge(req.params.demandeId, req.user.id);
+    if (!r) return res.status(404).json({ message: 'Demande introuvable.' });
+    await supabase.from('demandes_documents').delete().eq('id', r.d.id);
+    journaliser(req, { evenement: 'document_demande_annulee', user: req.user, role: 'refuge', cible_type: 'demande_document', cible_id: r.d.id });
+    return res.json({ message: 'Demande retirée.' });
+  } catch (e) {
+    console.error('DELETE /matching/documents error:', e);
+    return res.status(500).json({ message: 'Erreur serveur.' });
+  }
+});
+
+router.get('/documents/:demandeId/lien', requireAuth, async (req, res) => {
+  try {
+    const r = await demandeDuRefuge(req.params.demandeId, req.user.id);
+    if (!r?.d.document) return res.status(404).json({ message: 'Aucun document joint.' });
+    journaliser(req, { evenement: 'document_consulte', user: req.user, role: 'refuge', cible_type: 'demande_document', cible_id: r.d.id });
+    return res.json({ url: await docs.lienSigne(r.d.document.chemin) });
+  } catch (e) {
+    console.error('GET /matching/documents/lien error:', e);
+    return res.status(500).json({ message: 'Erreur serveur.' });
   }
 });
 

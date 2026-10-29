@@ -74,7 +74,10 @@ async function lancerPurge({ forcer = false, req = null } = {}) {
     .eq('statut', 'refuse').lt('decision_date', ilYa(6 * MOIS));
   await supprimer(refRefuses || [], 'refus_6_mois', bilan);
 
-  // 5. Journal de plus d'un an, jetons expirés
+  // 5. Documents des familles : 3 mois après la fin de l'accueil, 6 mois après le dépôt si jamais utilisés
+  bilan.documents_supprimes = await require('./documents').purgerDocuments().catch(e => { console.error('Purge documents:', e.message); return 0; });
+
+  // 6. Journal de plus d'un an, jetons expirés
   const { count: nJ } = await supabaseAdmin.from('journal_acces').delete({ count: 'exact' }).lt('cree_le', ilYa(365));
   bilan.journal_supprime = nJ || 0;
   await supabaseAdmin.from('reinitialisations_mdp').delete().lt('expire_le', ilYa(1));

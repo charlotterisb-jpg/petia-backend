@@ -60,7 +60,7 @@ async function refugeDe(req, res) {
 router.get('/moi', requireUser, async (req, res) => {
   try {
     const r = await refugeDe(req, res); if (!r) return;
-    return res.json({ refuge: r, a_completer: aCompleter(r) });
+    return res.json({ refuge: r, a_completer: aCompleter(r), types_documents: require('../services/documents').TYPES_DOC });
   } catch (e) {
     console.error('GET /refuge/moi error:', e);
     return res.status(500).json({ message: 'Erreur serveur.' });
@@ -77,6 +77,12 @@ router.patch('/moi', requireUser, async (req, res) => {
       if (i.details) maj.details = { ...(r.details || {}), ...i.details };
     }
     if (req.body?.conditions) maj.details = { ...(maj.details || r.details || {}), conditions: nettoyerConditions(req.body.conditions) };
+    if (Array.isArray(req.body?.documents_defaut)) {
+      const { TYPES_DOC } = require('../services/documents');
+      const liste = req.body.documents_defaut.filter(d => TYPES_DOC[d?.type]).slice(0, 10).map(d => ({
+        type: d.type, libelle: (typeof d.libelle === 'string' && d.libelle.trim() ? d.libelle.trim() : TYPES_DOC[d.type]).slice(0, 150), obligatoire: d.obligatoire !== false }));
+      maj.details = { ...(maj.details || r.details || {}), documents_defaut: liste };
+    }
     if (!Object.keys(maj).length) return res.status(400).json({ message: 'Rien à enregistrer.' });
     maj.updated_at = new Date().toISOString();
     const { data, error } = await supabase.from('refuges').update(maj).eq('id', r.id).select(COLONNES).single();
