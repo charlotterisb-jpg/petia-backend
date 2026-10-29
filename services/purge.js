@@ -4,6 +4,8 @@
 //   • compte inactif            → avertissement par e-mail à 23 mois d'inactivité,
 //                                 suppression à 2 ans (et au moins 30 jours après l'avertissement)
 //   • dossier refusé            → supprimé 6 mois après le refus
+//   • contrat signé             → conservé 5 ans après la fin de l'accueil, même si le compte
+//                                 est supprimé (archivage automatique en base), puis supprimé
 //   • journal des accès         → lignes de plus d'un an supprimées
 //   • jetons expirés            → supprimés
 // Exécution au plus une fois par 20 heures (vérifiée dans le journal), lancée
@@ -77,7 +79,12 @@ async function lancerPurge({ forcer = false, req = null } = {}) {
   // 5. Documents des familles : 3 mois après la fin de l'accueil, 6 mois après le dépôt si jamais utilisés
   bilan.documents_supprimes = await require('./documents').purgerDocuments().catch(e => { console.error('Purge documents:', e.message); return 0; });
 
-  // 6. Journal de plus d'un an, jetons expirés
+  // 6. Contrats signés : 5 ans après la fin de l'accueil (art. 2224 du Code civil)
+  const { count: nC, error: eC } = await supabaseAdmin.from('contrats').delete({ count: 'exact' }).lt('conserver_jusqu_au', new Date().toISOString());
+  if (eC) console.error('Purge contrats:', eC.message);
+  bilan.contrats_supprimes = nC || 0;
+
+  // 7. Journal de plus d'un an, jetons expirés
   const { count: nJ } = await supabaseAdmin.from('journal_acces').delete({ count: 'exact' }).lt('cree_le', ilYa(365));
   bilan.journal_supprime = nJ || 0;
   await supabaseAdmin.from('reinitialisations_mdp').delete().lt('expire_le', ilYa(1));

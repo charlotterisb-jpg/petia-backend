@@ -145,7 +145,7 @@ Légende : ✅ en place · 🟡 décidé, en cours de construction · ⬜ à dé
 - ✅ Signature électronique simple (eIDAS) : lecture jusqu'au bout obligatoire, 3 déclarations à cocher (famille), nom saisi (contrôlé pour la famille), **double authentification obligatoire** (mot de passe du compte + code Google Authenticator : un mot de passe volé ne suffit pas à signer) ; date, heure, IP et navigateur conservés.
 - ✅ Ordre : la famille signe, le refuge est notifié (bandeau « À faire » + e-mail) et contresigne ; l'arrivée de l'animal ne peut être confirmée qu'une fois le contrat signé par les deux parties.
 - ⬜ Code de confirmation par e-mail à ajouter quand Brevo sera débloqué.
-- ⬜ **Durée de conservation des contrats** à décider : aujourd'hui supprimés avec le compte (cascade) ; une conservation probatoire (ex. 5 ans, prescription civile) pourrait être justifiée.
+- ✅ **Conservation des contrats** (décision DPO du 29/10/2026) : contrats signés conservés 5 ans après la fin de l'accueil (prescription, art. 2224 du Code civil), y compris après suppression du compte (art. 17.3.e du RGPD) — archivage automatique en base (`contrats_archiver`), puis suppression par la purge. Contrats non signés par les deux parties : supprimés avec l'accueil.
 
 ## 9 ter. Documents demandés aux familles
 

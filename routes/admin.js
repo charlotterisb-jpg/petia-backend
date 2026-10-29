@@ -437,9 +437,13 @@ async function inventaire(id) {
     const { data: mr } = await supabaseAdmin.from('matchs').select('id').in('animal_id', inv.animaux.map(a => a.id));
     matchIds = matchIds.concat((mr || []).map(m => m.id));
   }
-  if (matchIds.length) {
-    const { data: cs } = await supabaseAdmin.from('contrats').select('id, match_id, statut, version_modele, empreinte, cree_le, fa_signe_le, fa_nom_signe, refuge_signe_le, refuge_nom_signe').in('match_id', matchIds);
+  // Contrats, y compris ceux archivés après suppression d'un accueil (conservés 5 ans)
+  {
+    const { data: cs } = await supabaseAdmin.from('contrats').select('id, match_id, statut, version_modele, empreinte, cree_le, fa_signe_le, fa_nom_signe, refuge_signe_le, refuge_nom_signe, fin_accueil_le, conserver_jusqu_au, archive_le')
+      .or(`famille_id.eq.${id},refuge_id.eq.${id}` + (matchIds.length ? `,match_id.in.(${matchIds.join(',')})` : ''));
     inv.contrats = cs || [];
+  }
+  if (matchIds.length) {
     // Commentaires de suivi liés aux accueils de la personne (ou rédigés par son refuge)
     const { data: ns } = await supabaseAdmin.from('suivi_notes').select('id, animal_id, match_id, texte, cree_le').in('match_id', matchIds);
     inv.notes_suivi = ns || [];
