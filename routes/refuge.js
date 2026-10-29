@@ -31,8 +31,11 @@ function nettoyerConditions(c = {}) {
   for (const [k, n] of [['urgence', 300], ['indemnite', 300], ['regles', 2000], ['veto_liste', 6000], ['rgpd_destinataires', 1000], ['rgpd_transfert', 1000], ['rgpd_conservation', 500], ['rgpd_dpo', 300]]) {
     const v = txt(c[k], n); if (v) out[k] = v;
   }
-  const mail = txt(c.rgpd_email, 200);
-  if (mail && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(mail)) out.rgpd_email = mail;
+  for (const k of ['rgpd_email', 'resiliation_email']) {
+    const m = txt(c[k], 200); if (m && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(m)) out[k] = m;
+  }
+  const pj = parseInt(c.preavis_jours, 10); if (Number.isInteger(pj) && pj >= 0 && pj <= 90) out.preavis_jours = pj;
+  const trib = txt(c.tribunal, 100); if (trib) out.tribunal = trib;
   // Lien vers la liste des vétérinaires partenaires (https uniquement)
   const lien = txt(c.veto_lien, 500);
   if (lien) { const u = /^https?:\/\//i.test(lien) ? lien : 'https://' + lien; if (/^https?:\/\/[^\s<>"]+\.[^\s<>"]+$/i.test(u)) out.veto_lien = u; }
