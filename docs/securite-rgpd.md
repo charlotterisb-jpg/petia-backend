@@ -33,6 +33,8 @@ Légende : ✅ en place · 🟡 décidé, en cours de construction · ⬜ à dé
 | `matchs` | FA (indirect) | score, recommandation, réponse de la FA, dates d'accueil |
 | `admins` | Admins | identifiant de compte |
 | `suivi_notes` | FA (indirect), refuges | commentaires datés du refuge sur un animal, éventuellement liés à un accueil (peuvent mentionner la famille) |
+| `documents_fa` + stockage privé `documents-fa` | FA | pièces déposées par la famille (attestation RC, justificatif de domicile, accord du bailleur, autre) : fichier, type, taille, empreinte SHA-256, date |
+| `demandes_documents` | FA, refuges | document demandé par un refuge pour un accueil, caractère obligatoire, statut (à fournir, transmis, validé, refusé + motif) |
 | `contrats` | FA, refuges | texte du contrat figé (identité et adresse de la FA, refuge, animal, modalités de remise), empreinte SHA-256, nom saisi, date, IP et navigateur de chaque signataire |
 | `journal_acces` | Tous (y compris personnes sans compte : e-mail saisi lors d'une tentative de connexion) | événement, date, compte, e-mail, rôle, cible consultée, IP, navigateur |
 | `reinitialisations_mdp` | FA, refuges | empreinte du jeton de réinitialisation (jamais le jeton), expiration, IP de la demande |
@@ -144,6 +146,16 @@ Légende : ✅ en place · 🟡 décidé, en cours de construction · ⬜ à dé
 - ✅ Ordre : la famille signe, le refuge est notifié (bandeau « À faire » + e-mail) et contresigne ; l'arrivée de l'animal ne peut être confirmée qu'une fois le contrat signé par les deux parties.
 - ⬜ Code de confirmation par e-mail à ajouter quand Brevo sera débloqué.
 - ⬜ **Durée de conservation des contrats** à décider : aujourd'hui supprimés avec le compte (cascade) ; une conservation probatoire (ex. 5 ans, prescription civile) pourrait être justifiée.
+
+## 9 ter. Documents demandés aux familles
+
+- ✅ Coffre-fort de la famille : dépôt une fois, réutilisation pour plusieurs refuges ; un refuge ne voit un document que si la famille l'a joint à l'une de ses demandes (décision DPO du 29/10/2026).
+- ✅ Le refuge définit une liste par défaut (créée à l'acceptation d'une proposition) et peut faire des demandes ponctuelles ; il valide ou refuse (motif communiqué à la famille).
+- ✅ Documents obligatoires : la famille ne peut signer le contrat qu'une fois validés par le refuge.
+- ✅ Fichiers PDF, JPG ou PNG de 5 Mo maximum, type contrôlé sur le contenu réel ; stockage Supabase privé (UE), jamais public ; consultation uniquement par lien signé valable 60 secondes, généré par le serveur ; chaque dépôt, partage, consultation, validation et suppression est journalisé.
+- ✅ Pièce d'identité volontairement absente du catalogue (minimisation) ; possible seulement en « autre document » si le refuge le justifie.
+- ✅ Conservation : suppression automatique 3 mois après la fin de l'accueil, ou 6 mois après le dépôt si le document n'a jamais été utilisé ; suppression immédiate par la famille (coffre-fort) ou avec le compte ; inclus dans l'outil DPO.
+- ⬜ Pas d'analyse antivirus des fichiers (le contrôle du type réel limite le risque) ; à envisager.
 
 ## 10. Intelligence artificielle
 
