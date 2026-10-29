@@ -23,7 +23,9 @@ app.use(helmet({
 const ORIGINES = (process.env.CORS_ORIGINS || 'https://petia-frontend.vercel.app,https://petia-admin.vercel.app,https://petia-admin-charlotte-s-projects3.vercel.app')
   .split(',').map(o => o.trim()).filter(Boolean);
 app.use(cors({
-  origin: (origin, cb) => cb(null, !origin || ORIGINES.includes(origin)),
+  // + les adresses Vercel du projet admin (petia-admin-…-charlotte-s-projects3.vercel.app)
+  origin: (origin, cb) => cb(null, !origin || ORIGINES.includes(origin)
+    || /^https:\/\/petia-admin(-[a-z0-9-]+)?-charlotte-s-projects3\.vercel\.app$/.test(origin)),
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'],
   allowedHeaders: ['Content-Type', 'Authorization'],
   maxAge: 600,
