@@ -14,12 +14,11 @@ const PDFDocument = require('pdfkit');
 const { createClient } = require('@supabase/supabase-js');
 
 const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_KEY);
-const VERSION_MODELE = 'provisoire-2026-10-29';
+const VERSION_MODELE = 'provisoire-2026-10-29b';
 
 const CONFIRMATIONS_FA = [
   "J'ai lu et compris l'intégralité du contrat de famille d'accueil.",
   "Je confirme disposer d'une assurance responsabilité civile couvrant la garde d'animaux de compagnie.",
-  "Je reconnais que l'attachement créé pendant l'accueil ne constitue pas un droit d'adoption prioritaire.",
   "Je m'engage à respecter les consignes du refuge pour cet animal.",
 ];
 
@@ -70,7 +69,7 @@ function rediger({ refuge: r, famille: f, animal: a, match: m }) {
         "Fournir à l'animal une alimentation adaptée, de l'eau fraîche en permanence, les sorties et l'exercice nécessaires ; ne jamais utiliser de méthodes punitives.",
         "Veiller à la sécurité de l'animal et empêcher toute fugue ; respecter les consignes de l'Association propres à cet animal.",
         "Donner régulièrement des nouvelles de l'animal et répondre aux sollicitations de l'Association dans un délai raisonnable.",
-        "Il est strictement interdit de céder, confier ou tenter d'adopter l'animal sans accord écrit de l'Association.",
+        "Il est interdit de céder ou de confier l'animal à un tiers sans accord écrit de l'Association.",
       ] },
       { titre: 'Article 4 — Prise en charge des frais', paragraphes: [
         "Les frais vétérinaires prescrits ou validés par l'Association sont à sa charge, selon les modalités qu'elle communique à la Famille d'Accueil. Les modalités de prise en charge de l'alimentation et du matériel sont précisées par l'Association avant la remise de l'animal.",
@@ -85,7 +84,7 @@ function rediger({ refuge: r, famille: f, animal: a, match: m }) {
         "Conformément à l'article 1243 du Code civil, la Famille d'Accueil a la garde de l'animal dès sa prise en charge et répond des dommages qu'il cause aux tiers. Elle certifie être couverte par une assurance responsabilité civile incluant la garde d'animaux.",
       ] },
       { titre: "Article 7 — Fin de l'accueil et restitution", paragraphes: [
-        "L'attachement créé pendant l'accueil ne constitue pas un droit à l'adoption. La Famille d'Accueil ne peut s'opposer à la remise de l'animal à une famille adoptante validée ; si elle souhaite l'adopter, elle en informe l'Association par écrit.",
+        "Si la Famille d'Accueil souhaite adopter l'animal, elle en informe l'Association, qui étudie sa demande en priorité. À défaut, elle remet l'animal à l'Association ou à la famille adoptante désignée par celle-ci, selon les modalités convenues.",
         "L'Association peut reprendre l'animal immédiatement en cas de non-respect des obligations, de maltraitance ou de mise en danger de son bien-être.",
       ] },
       { titre: 'Article 8 — Données personnelles', paragraphes: [
