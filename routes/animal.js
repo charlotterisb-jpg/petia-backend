@@ -174,6 +174,80 @@ router.get('/', requireAuth, async (req, res) => {
 });
 
 // ─── GET /api/animal/:id — Détail d'un animal ────────────────────────────────
+// ═══ SUIVI D'UN ANIMAL : historique des accueils et journal de commentaires ══
+const { journaliser } = require('../services/journal');
+
+async function animalDuRefuge(id, refugeId) {
+  const { data } = await supabaseAdmin.from('animaux').select('*').eq('id', id).maybeSingle();
+  return data && data.refuge_id === refugeId ? data : null;
+}
+
+router.get('/:id/suivi', requireAuth, async (req, res) => {
+  try {
+    const animal = await animalDuRefuge(req.params.id, req.user.id);
+    if (!animal) return res.status(404).json({ message: 'Animal introuvable.' });
+    const { data: matchs, error } = await supabaseAdmin.from('matchs')
+      .select('id, statut, reponse_fa, date_reponse_fa, date_debut_accueil, date_fin_accueil, issue_fin, modalites, created_at, updated_at, famille:familles_accueil(prenom, nom, telephone, email, ville, code_postal)')
+      .eq('animal_id', animal.id).order('created_at', { ascending: false });
+    if (error) throw error;
+    // Accueils réels : famille ayant accepté (en préparation, en cours ou terminé)
+    const accueils = (matchs || []).filter(m => m.reponse_fa === 'oui' && ['accepte', 'en_cours', 'termine'].includes(m.statut));
+    const ids = accueils.map(m => m.id);
+    const { data: cs } = ids.length ? await supabaseAdmin.from('contrats').select('match_id, statut, fa_signe_le, refuge_signe_le').in('match_id', ids) : { data: [] };
+    const contrats = Object.fromEntries((cs || []).map(c => [c.match_id, c]));
+    const { data: notes } = await supabaseAdmin.from('suivi_notes').select('id, match_id, texte, cree_le, auteur_id').eq('animal_id', animal.id).order('cree_le', { ascending: false }).limit(500);
+    journaliser(req, { evenement: 'consultation_suivi', user: req.user, role: 'refuge', cible_type: 'animal', cible_id: animal.id });
+    return res.json({
+      animal,
+      accueils: accueils.map(m => ({ ...m, contrat: contrats[m.id] || null })),
+      propositions: (matchs || []).filter(m => !accueils.includes(m)).length,
+      notes: (notes || []).map(n => ({ ...n, de_moi: n.auteur_id === req.user.id, auteur_id: undefined })),
+    });
+  } catch (e) {
+    console.error('GET /animal/suivi error:', e);
+    return res.status(500).json({ message: 'Erreur serveur.' });
+  }
+});
+
+// { texte, match_id? }
+router.post('/:id/notes', requireAuth, async (req, res) => {
+  try {
+    const animal = await animalDuRefuge(req.params.id, req.user.id);
+    if (!animal) return res.status(404).json({ message: 'Animal introuvable.' });
+    const texte = String(req.body?.texte || '').trim().slice(0, 4000);
+    if (!texte) return res.status(400).json({ message: 'Le commentaire est vide.' });
+    let matchId = null;
+    if (req.body?.match_id) {
+      const { data: m } = await supabaseAdmin.from('matchs').select('id, animal_id').eq('id', req.body.match_id).maybeSingle();
+      if (m?.animal_id === animal.id) matchId = m.id;
+    }
+    const { data, error } = await supabaseAdmin.from('suivi_notes')
+      .insert({ animal_id: animal.id, match_id: matchId, auteur_id: req.user.id, texte }).select('id, match_id, texte, cree_le').single();
+    if (error) throw error;
+    journaliser(req, { evenement: 'suivi_note_ajoutee', user: req.user, role: 'refuge', cible_type: 'animal', cible_id: animal.id });
+    return res.status(201).json({ note: { ...data, de_moi: true } });
+  } catch (e) {
+    console.error('POST /animal/notes error:', e);
+    return res.status(500).json({ message: 'Erreur serveur.' });
+  }
+});
+
+router.delete('/:id/notes/:noteId', requireAuth, async (req, res) => {
+  try {
+    const animal = await animalDuRefuge(req.params.id, req.user.id);
+    if (!animal) return res.status(404).json({ message: 'Animal introuvable.' });
+    const { data, error } = await supabaseAdmin.from('suivi_notes').delete()
+      .eq('id', req.params.noteId).eq('animal_id', animal.id).eq('auteur_id', req.user.id).select('id');
+    if (error) throw error;
+    if (!data?.length) return res.status(404).json({ message: 'Commentaire introuvable.' });
+    journaliser(req, { evenement: 'suivi_note_supprimee', user: req.user, role: 'refuge', cible_type: 'animal', cible_id: animal.id });
+    return res.json({ message: 'Commentaire supprimé.' });
+  } catch (e) {
+    console.error('DELETE /animal/notes error:', e);
+    return res.status(500).json({ message: 'Erreur serveur.' });
+  }
+});
+
 router.get('/:id', requireAuth, async (req, res) => {
   try {
     const { data, error } = await supabaseAdmin

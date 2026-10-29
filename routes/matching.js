@@ -386,7 +386,7 @@ router.patch('/match/:matchId/fin', requireAuth, async (req, res) => {
     let fin = dateAccueil(req.body?.date_fin);
     if (m.date_debut_accueil && fin < m.date_debut_accueil) fin = m.date_debut_accueil;
     const { error: e1 } = await supabase.from('matchs')
-      .update({ statut: 'termine', date_fin_accueil: fin, updated_at: maintenant }).eq('id', m.id);
+      .update({ statut: 'termine', date_fin_accueil: fin, issue_fin: issue, updated_at: maintenant }).eq('id', m.id);
     if (e1) throw e1;
     const { error: e2 } = await supabase.from('animaux')
       .update({ statut: statutsAnimal[issue], updated_at: maintenant }).eq('id', animal.id);
