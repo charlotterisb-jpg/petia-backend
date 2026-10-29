@@ -20,7 +20,7 @@ app.use(helmet({
 
 // Seuls les sites PetIA peuvent appeler l'API depuis un navigateur.
 // CORS_ORIGINS (Render) permet d'ajouter les futurs domaines, séparés par des virgules.
-const ORIGINES = (process.env.CORS_ORIGINS || 'https://petia-frontend.vercel.app,https://petia-admin.vercel.app')
+const ORIGINES = (process.env.CORS_ORIGINS || 'https://petia-frontend.vercel.app,https://petia-admin.vercel.app,https://petia-admin-charlotte-s-projects3.vercel.app')
   .split(',').map(o => o.trim()).filter(Boolean);
 app.use(cors({
   origin: (origin, cb) => cb(null, !origin || ORIGINES.includes(origin)),
@@ -72,6 +72,7 @@ app.listen(PORT, () => {
     try { const r = JSON.parse(Buffer.from(cle.split('.')[1], 'base64url').toString()).role; type = r === 'service_role' ? 'JWT service_role (OK)' : `JWT ${r} (ERREUR : pas service_role)`; } catch { type = 'JWT illisible'; }
   }
   console.log(`🔑 Clé Supabase serveur : ${type}`);
+  console.log(`🌐 Sites autorisés (CORS) : ${ORIGINES.join(', ')}${process.env.CORS_ORIGINS ? ' [variable CORS_ORIGINS]' : ''}`);
   // Suppression automatique des données arrivées au terme de leur durée de conservation
   if (process.env.NODE_ENV !== 'test') require('./services/purge').planifierPurge();
 });
