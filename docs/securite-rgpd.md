@@ -140,7 +140,7 @@ Légende : ✅ en place · 🟡 décidé, en cours de construction · ⬜ à dé
 
 ## 9 bis. Contrat d'accueil et signature électronique
 
-- ✅ Contrat généré automatiquement quand la famille accepte une proposition, à partir d'un **modèle provisoire** (texte à valider par la DPO / juriste).
+- ✅ Contrat généré automatiquement quand la famille accepte une proposition, à partir d'un modèle validé par la DPO le 29/10/2026 (version provisoire-2026-10-29g : 14 articles, dont garde et responsabilités civile et pénale, droit à l'image, résiliation, données personnelles — l'association est responsable du traitement —, loi applicable). Mention « modèle provisoire » conservée jusqu'à décision contraire.
 - ✅ Texte figé à la génération, empreinte SHA-256 conservée et vérifiée avant chaque signature ; PDF téléchargeable par les deux parties avec l'empreinte et le détail des signatures.
 - ✅ Signature électronique simple (eIDAS) : lecture jusqu'au bout obligatoire, 3 déclarations à cocher (famille), nom saisi (contrôlé pour la famille), **double authentification obligatoire** (mot de passe du compte + code Google Authenticator : un mot de passe volé ne suffit pas à signer) ; date, heure, IP et navigateur conservés.
 - ✅ Ordre : la famille signe, le refuge est notifié (bandeau « À faire » + e-mail) et contresigne ; l'arrivée de l'animal ne peut être confirmée qu'une fois le contrat signé par les deux parties.
