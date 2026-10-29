@@ -20,6 +20,7 @@ const CHOIX = {
   nourriture: ['refuge_fournit', 'rembourse', 'famille'],
   veterinaire: ['refuge_100', 'refuge_sur_accord', 'partage'],
   transport: ['refuge', 'famille', 'selon_cas'],
+  veto_mode: ['liste_lien', 'liste_remise', 'au_choix'],
 };
 const MATERIEL = ['laisse', 'gamelles', 'couchage', 'caisse', 'jouets', 'litiere', 'cage'];
 const txt = (v, n) => (typeof v === 'string' && v.trim() ? v.trim().slice(0, n) : null);
@@ -27,9 +28,12 @@ const txt = (v, n) => (typeof v === 'string' && v.trim() ? v.trim().slice(0, n) 
 function nettoyerConditions(c = {}) {
   const out = {};
   for (const [k, vals] of Object.entries(CHOIX)) if (vals.includes(c[k])) out[k] = c[k];
-  for (const [k, n] of [['veto_nom', 120], ['veto_telephone', 30], ['veto_adresse', 300], ['urgence', 300], ['indemnite', 300], ['regles', 2000]]) {
+  for (const [k, n] of [['urgence', 300], ['indemnite', 300], ['regles', 2000]]) {
     const v = txt(c[k], n); if (v) out[k] = v;
   }
+  // Lien vers la liste des vétérinaires partenaires (https uniquement)
+  const lien = txt(c.veto_lien, 500);
+  if (lien) { const u = /^https?:\/\//i.test(lien) ? lien : 'https://' + lien; if (/^https?:\/\/[^\s<>"]+\.[^\s<>"]+$/i.test(u)) out.veto_lien = u; }
   if (Array.isArray(c.materiel)) out.materiel = [...new Set(c.materiel.filter(m => MATERIEL.includes(m)))];
   return out;
 }
@@ -41,7 +45,8 @@ function aCompleter(r) {
   if (!r.adresse || !r.telephone) manque.push({ cle: 'infos', txt: 'Adresse et téléphone de la structure' });
   if (!r.contact_nom && !r.contact_prenom) manque.push({ cle: 'infos', txt: 'Contact référent' });
   if (!c.nourriture || !c.veterinaire) manque.push({ cle: 'conditions', txt: 'Prise en charge de la nourriture et des frais vétérinaires' });
-  if (!c.veto_nom && !c.urgence) manque.push({ cle: 'conditions', txt: 'Vétérinaire partenaire ou consigne en cas d\'urgence' });
+  if (!c.veto_mode) manque.push({ cle: 'conditions', txt: 'Vétérinaires : liste en ligne, liste remise avec l\'animal ou vétérinaire au choix' });
+  else if (c.veto_mode === 'liste_lien' && !c.veto_lien) manque.push({ cle: 'conditions', txt: 'Lien vers votre liste de vétérinaires partenaires' });
   return manque;
 }
 

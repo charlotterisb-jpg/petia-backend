@@ -45,7 +45,12 @@ function rediger({ refuge: r, famille: f, animal: a, match: m }) {
   const VETO = { refuge_100: "Les frais vétérinaires sont intégralement pris en charge par l'Association.", refuge_sur_accord: "Les frais vétérinaires sont pris en charge par l'Association, après son accord préalable sauf urgence.", partage: "Les frais vétérinaires sont répartis entre les parties selon les modalités convenues avec l'Association." };
   const TRANSPORT = { refuge: "Les trajets liés à l'accueil (vétérinaire, visites) sont assurés ou remboursés par l'Association.", famille: "Les trajets liés à l'accueil sont à la charge de la Famille d'Accueil.", selon_cas: "La prise en charge des trajets est convenue au cas par cas avec l'Association." };
   const MATERIEL_TXT = { laisse: 'laisse et collier ou harnais', gamelles: 'gamelles', couchage: 'couchage', caisse: 'caisse de transport', jouets: 'jouets', litiere: 'litière et bac', cage: 'cage ou enclos' };
-  const veto = [cond.veto_nom, cond.veto_adresse, cond.veto_telephone].filter(Boolean).map(sansEmoji).join(', ');
+  const VETO_MODE = {
+    liste_lien: "La Famille d'Accueil consulte en priorité un vétérinaire partenaire de l'Association, dont la liste est disponible à l'adresse suivante : " + (cond.veto_lien || 'communiquée par l\'Association') + '.',
+    liste_remise: "La Famille d'Accueil consulte en priorité un vétérinaire partenaire de l'Association, dont la liste lui est remise avec l'animal.",
+    au_choix: "La Famille d'Accueil peut consulter le vétérinaire de son choix, dans le respect des conditions de prise en charge prévues à l'article 4.",
+  };
+  const veto = VETO_MODE[cond.veto_mode] || (cond.veto_nom ? 'Vétérinaire partenaire de l\'Association : ' + [cond.veto_nom, cond.veto_adresse, cond.veto_telephone].filter(Boolean).map(sansEmoji).join(', ') + '.' : null);
   const particularites = [a.besoins_specifiques, a.description && 'Consignes : ' + a.description, c.problemes_sante?.length && 'Santé : ' + c.problemes_sante.join(', ')]
     .filter(Boolean).map(sansEmoji).join(' ; ') || 'aucune signalée';
 
@@ -87,7 +92,7 @@ function rediger({ refuge: r, famille: f, animal: a, match: m }) {
       ] },
       { titre: 'Article 5 — Santé et urgences', paragraphes: [
         "La Famille d'Accueil suit les prescriptions en cours. En cas d'urgence médicale, elle conduit immédiatement l'animal chez un vétérinaire et prévient l'Association dans les 2 heures.",
-        ...(veto ? ['Vétérinaire partenaire de l\'Association : ' + veto + '.'] : []),
+        ...(veto ? [veto] : []),
         ...(cond.urgence ? ['En cas d\'urgence, notamment la nuit et le week-end : ' + sansEmoji(cond.urgence) + '.'] : []),
         "Elle prévient également l'Association dans les 2 heures en cas de fugue, morsure, comportement agressif inhabituel ou impossibilité de poursuivre l'accueil.",
         `Contact de l'Association : ${[referent, r.telephone, r.email].filter(Boolean).join(' · ') || 'coordonnées disponibles sur PetIA'}.`,
