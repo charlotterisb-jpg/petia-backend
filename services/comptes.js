@@ -144,6 +144,11 @@ async function supprimerPersonne(userId, emailConnu) {
     bilan.profils.push(p.table);
   }
 
+  // Les contrats signés ne sont pas supprimés : archivés automatiquement en base et conservés
+  // 5 ans après la fin de l'accueil (preuve, art. 17.3.e du RGPD et art. 2224 du Code civil)
+  const { count: nCtr } = await supabaseAdmin.from('contrats').select('id', { count: 'exact', head: true }).or(`famille_id.eq.${userId},refuge_id.eq.${userId}`);
+  bilan.contrats_conserves = nCtr || 0;
+
   const { data: n, error: eJ } = await supabaseAdmin.rpc('anonymiser_journal', { p_user: userId, p_email: email });
   if (eJ) console.error('anonymiser_journal:', eJ.message);
   bilan.journal_anonymise = n || 0;
