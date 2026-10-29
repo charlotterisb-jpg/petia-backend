@@ -118,10 +118,13 @@ router.patch('/disponibilite', requireFamille, async (req, res) => {
 
 // Ce que la famille voit d'un animal proposé (pas la puce ni les notes internes)
 const COLONNES_ANIMAL_FA =
-  'id, nom, espece, sous_espece, race, age_annees, age_mois, sexe, poids_kg, sterilise, urgence, statut, ' +
-  'compatible_enfants, compatible_chiens, compatible_chats, temps_seul_max, balades_min_jour, niveau_exercice, ' +
+  'id, nom, espece, sous_espece, race, age_annees, age_mois, sexe, poids_kg, taille, sterilise, urgence, statut, ' +
+  'compatible_enfants, age_enfants_min, compatible_chiens, compatible_chats, temps_seul_max, presence_constante, balades_min_jour, niveau_exercice, ' +
+  'escaliers, cloture_min, sortie_sans_laisse, vehicule_requis, experience_fa_requise, ' +
   'description, comportement, historique, besoins_specifiques, details, photo_url, ' +
-  'refuge:refuges(nom, ville, code_postal, telephone, email, statut, cloture_le, bloque_le)';
+  'refuge:refuges(nom, type_structure, adresse, ville, code_postal, telephone, email, site_web, contact_prenom, contact_nom, contact_fonction, statut, cloture_le, bloque_le)';
+// Coordonnées et contact du refuge : seulement une fois la proposition acceptée par la famille
+const CONTACT_REFUGE = ['telephone', 'email', 'contact_prenom', 'contact_nom', 'contact_fonction'];
 
 // ─── GET /api/fa/propositions ────────────────────────────────────────────────
 // Uniquement les propositions validées par le refuge (et la suite de l'accueil)
@@ -129,7 +132,7 @@ router.get('/propositions', requireFamille, async (req, res) => {
   try {
     const { data, error } = await supabaseAdmin
       .from('matchs')
-      .select(`id, score, recommandation, statut, reponse_fa, date_reponse_fa, date_debut_accueil, date_fin_accueil, created_at, updated_at, details_score,
+      .select(`id, score, recommandation, statut, reponse_fa, date_reponse_fa, date_debut_accueil, date_fin_accueil, created_at, updated_at, details_score, modalites,
                animal:animaux(${COLONNES_ANIMAL_FA})`)
       .eq('famille_id', req.famId)
       .in('statut', ['accepte', 'en_cours', 'termine'])
@@ -143,7 +146,7 @@ router.get('/propositions', requireFamille, async (req, res) => {
         m.animal.details = { ...m.animal.details, commun };
       }
       // Coordonnées du refuge seulement une fois la proposition acceptée
-      if (m.animal?.refuge && m.reponse_fa !== 'oui') { delete m.animal.refuge.telephone; delete m.animal.refuge.email; }
+      if (m.animal?.refuge && m.reponse_fa !== 'oui') CONTACT_REFUGE.forEach(k => delete m.animal.refuge[k]);
       return { ...m, resume_ia: m.details_score?.resume_ia || null, details_score: undefined };
     });
     return res.json({ propositions });

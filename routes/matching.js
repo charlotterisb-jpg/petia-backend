@@ -44,7 +44,7 @@ async function animalDuRefuge(animalId, refugeId) {
 async function listerMatchs(animalId) {
   const { data, error } = await supabase
     .from('matchs')
-    .select(`id, score, recommandation, incompatibilites, details_score, bonus_urgence, statut, reponse_fa, date_reponse_fa, date_debut_accueil, date_fin_accueil, created_at,
+    .select(`id, score, recommandation, incompatibilites, details_score, bonus_urgence, statut, reponse_fa, date_reponse_fa, date_debut_accueil, date_fin_accueil, created_at, modalites,
              famille:familles_accueil(${COLONNES_FAMILLE_AFFICHAGE})`)
     .eq('animal_id', animalId)
     .order('score', { ascending: false });
@@ -158,11 +158,23 @@ router.get('/:animalId', requireAuth, async (req, res) => {
   }
 });
 
+// Modalités de remise de l'animal, fixées par le refuge en validant le match
+const MODES_REMISE = ['famille_vient', 'refuge_amene', 'a_convenir'];
+function nettoyerModalites(m) {
+  if (!m || !MODES_REMISE.includes(m.mode)) return null;
+  const txt = (v, n) => (typeof v === 'string' && v.trim() ? v.trim().slice(0, n) : null);
+  const date = typeof m.date === 'string' && /^\d{4}-\d{2}-\d{2}(T\d{2}:\d{2})?$/.test(m.date) ? m.date : null;
+  return { mode: m.mode, lieu: txt(m.lieu, 300), date, note: txt(m.note, 1000) };
+}
+
 router.patch('/match/:matchId', requireAuth, async (req, res) => {
   try {
     const { statut } = req.body || {};
     if (!['accepte', 'refuse'].includes(statut))
       return res.status(400).json({ message: 'Statut invalide.' });
+    const modalites = nettoyerModalites(req.body?.modalites);
+    if (statut === 'accepte' && !modalites)
+      return res.status(400).json({ message: 'Indiquez comment l\'animal sera remis à la famille.' });
 
     const { data: match } = await supabase
       .from('matchs').select('id, animal_id, statut').eq('id', req.params.matchId).single();
@@ -176,12 +188,31 @@ router.patch('/match/:matchId', requireAuth, async (req, res) => {
       return res.status(409).json({ message: 'L\'animal n\'est plus disponible.' });
 
     const { error } = await supabase
-      .from('matchs').update({ statut, updated_at: new Date().toISOString() }).eq('id', match.id);
+      .from('matchs').update({ statut, ...(statut === 'accepte' ? { modalites } : {}), updated_at: new Date().toISOString() }).eq('id', match.id);
     if (error) throw error;
     journaliser(req, { evenement: 'match_' + statut, user: req.user, role: 'refuge', cible_type: 'match', cible_id: match.id });
     return res.json({ message: statut === 'accepte' ? 'Match validé.' : 'Match refusé.' });
   } catch (e) {
     console.error('PATCH /matching error:', e);
+    return res.status(500).json({ message: 'Erreur serveur.' });
+  }
+});
+
+// ─── PATCH /api/matching/match/:id/modalites — avant l'arrivée de l'animal ──
+router.patch('/match/:matchId/modalites', requireAuth, async (req, res) => {
+  try {
+    const modalites = nettoyerModalites(req.body?.modalites);
+    if (!modalites) return res.status(400).json({ message: 'Modalités invalides.' });
+    const { data: match } = await supabase.from('matchs').select('id, animal_id, statut').eq('id', req.params.matchId).maybeSingle();
+    const animal = match && await animalDuRefuge(match.animal_id, req.user.id);
+    if (!match || !animal) return res.status(404).json({ message: 'Match introuvable.' });
+    if (match.statut !== 'accepte') return res.status(409).json({ message: 'Les modalités se modifient avant l\'arrivée de l\'animal.' });
+    const { error } = await supabase.from('matchs').update({ modalites, updated_at: new Date().toISOString() }).eq('id', match.id);
+    if (error) throw error;
+    journaliser(req, { evenement: 'modalites_modifiees', user: req.user, role: 'refuge', cible_type: 'match', cible_id: match.id });
+    return res.json({ message: 'Modalités mises à jour.', modalites });
+  } catch (e) {
+    console.error('PATCH /matching/modalites error:', e);
     return res.status(500).json({ message: 'Erreur serveur.' });
   }
 });
