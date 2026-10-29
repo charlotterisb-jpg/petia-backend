@@ -31,14 +31,29 @@ app.use(cors({
   maxAge: 600,
 }));
 
+// Adresse IP réelle du visiteur. Render passe par Cloudflare, qui fournit l'IP du
+// client dans un en-tête qu'il réécrit lui-même (non falsifiable par le visiteur).
+let diagnosticIp = false;
+app.use((req, res, next) => {
+  const cf = req.headers['cf-connecting-ip'] || req.headers['true-client-ip'];
+  req.ipClient = (typeof cf === 'string' && /^[0-9a-fA-F:.]{3,45}$/.test(cf)) ? cf : req.ip;
+  if (!diagnosticIp) {
+    diagnosticIp = true;
+    const xff = String(req.headers['x-forwarded-for'] || '').split(',').filter(Boolean).length;
+    console.log(`🌍 IP visiteur : en-tête Cloudflare ${cf ? 'présent' : 'absent'}, ${xff} adresse(s) dans X-Forwarded-For`);
+  }
+  next();
+});
+
 app.use(express.json({ limit: '200kb' }));
 
 // Limites de requêtes par adresse IP
 const messageLimite = { message: 'Trop de requêtes. Réessayez dans quelques minutes.' };
-app.use('/api', rateLimit({ windowMs: 15 * 60 * 1000, limit: 600, standardHeaders: 'draft-7', legacyHeaders: false, message: messageLimite }));
+const parIp = { keyGenerator: (req) => req.ipClient || req.ip };
+app.use('/api', rateLimit({ windowMs: 15 * 60 * 1000, limit: 600, standardHeaders: 'draft-7', legacyHeaders: false, message: messageLimite, ...parIp }));
 // Connexion, inscription, mot de passe, double authentification : protection contre les essais en masse
 const limiteSensible = rateLimit({
-  windowMs: 15 * 60 * 1000, limit: 20, standardHeaders: 'draft-7', legacyHeaders: false,
+  windowMs: 15 * 60 * 1000, limit: 20, standardHeaders: 'draft-7', legacyHeaders: false, ...parIp,
   message: { message: 'Trop de tentatives depuis cette connexion. Réessayez dans 15 minutes.' },
 });
 for (const chemin of ['/api/auth/login-fa', '/api/auth/login-fourriere', '/api/auth/register-fa', '/api/auth/register-refuge',

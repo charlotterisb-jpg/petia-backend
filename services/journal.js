@@ -13,7 +13,7 @@ const supabaseAdmin = createClient(process.env.SUPABASE_URL, process.env.SUPABAS
 const SITE = process.env.SITE_URL || 'https://petia-frontend.vercel.app';
 
 // ─── Écriture ────────────────────────────────────────────────────────────────
-const ip = (req) => (req?.ip || '').slice(0, 64) || null;
+const ip = (req) => (req?.ipClient || req?.ip || '').slice(0, 64) || null;
 const appareil = (req) => String(req?.headers?.['user-agent'] || '').slice(0, 300) || null;
 
 async function journaliser(req, { evenement, user, userId, email, role, cible_type, cible_id, details } = {}) {

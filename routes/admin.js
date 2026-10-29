@@ -269,7 +269,7 @@ router.post('/connexion', requireAdmin, async (req, res) => {
   alerterAdmins(req, {
     evenement: 'alerte_connexion_admin', sujet: 'Connexion à l\'espace admin',
     message: `Connexion à l'espace admin PetIA avec le compte <strong style="color:#fff;">${escJ(req.user.email)}</strong>, `
-      + `le ${new Date().toLocaleString('fr-FR', { timeZone: 'Europe/Paris' })} (${escJ(sig)}, IP ${escJ(req.ip)}).<br><br>`
+      + `le ${new Date().toLocaleString('fr-FR', { timeZone: 'Europe/Paris' })} (${escJ(sig)}, IP ${escJ(req.ipClient || req.ip)}).<br><br>`
       + 'Si ce n\'est pas vous, changez immédiatement le mot de passe de ce compte et retirez-le de la liste des admins.',
     details: { compte: req.user.id },
   }).catch(() => {});
