@@ -713,6 +713,16 @@ router.post('/mfa/login', async (req, res) => {
   }
 });
 
+// Supabase renvoie le QR code en SVG brut : on le transmet en base64, seul format
+// affiché de façon fiable par tous les navigateurs (Safari et Firefox coupent au « # »)
+function qrEnImage(qr) {
+  if (!qr) return null;
+  if (qr.startsWith('data:image/svg+xml;base64,')) return qr;
+  const svg = qr.replace(/^data:image\/svg\+xml;(utf-?8|charset=utf-?8),/i, '');
+  return 'data:image/svg+xml;base64,' + Buffer.from(decodeURIComponentSafe(svg), 'utf8').toString('base64');
+}
+function decodeURIComponentSafe(s) { try { return s.includes('%3C') || s.includes('%3c') ? decodeURIComponent(s) : s; } catch { return s; } }
+
 // ─── GET /api/auth/mfa/statut ────────────────────────────────────────────────
 router.get('/mfa/statut', requireUser, (req, res) => {
   res.json({ active: facteursActifs(req.user).length > 0 });
@@ -730,7 +740,7 @@ router.post('/mfa/activer', requireUser, async (req, res) => {
       method: 'POST', token: req.token,
       body: { factor_type: 'totp', friendly_name: 'PetIA', issuer: 'PetIA' },
     });
-    return res.json({ factor_id: f.id, qr_code: f.totp?.qr_code, secret: f.totp?.secret, uri: f.totp?.uri });
+    return res.json({ factor_id: f.id, qr_code: qrEnImage(f.totp?.qr_code), secret: f.totp?.secret, uri: f.totp?.uri });
   } catch (e) {
     console.error('mfa/activer error:', e);
     return res.status(500).json({ message: 'Impossible de démarrer l\'activation.' });
