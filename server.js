@@ -57,7 +57,7 @@ const limiteSensible = rateLimit({
   message: { message: 'Trop de tentatives depuis cette connexion. Réessayez dans 15 minutes.' },
 });
 for (const chemin of ['/api/auth/login-fa', '/api/auth/login-fourriere', '/api/auth/register-fa', '/api/auth/register-refuge',
-                      '/api/auth/mot-de-passe', '/api/auth/cloturer', '/api/auth/mfa', '/api/admin/moi', '/api/auth/compte-bloque', '/api/auth/sessions'])
+                      '/api/auth/mot-de-passe', '/api/auth/cloturer', '/api/auth/mfa', '/api/admin/moi', '/api/auth/compte-bloque', '/api/auth/sessions', '/api/auth/rafraichir'])
   app.use(chemin, limiteSensible);
 
 // Route de test

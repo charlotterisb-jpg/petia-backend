@@ -68,6 +68,7 @@ Légende : ✅ en place · 🟡 décidé, en cours de construction · ⬜ à dé
   - 3 demandes maximum par heure par e-mail et par IP ; réponse identique, au même moment, que le compte existe ou non.
 - ✅ Changement de mot de passe depuis son espace : mot de passe actuel + code Google Authenticator si activé ; mêmes règles, fermeture des sessions et e-mail d'alerte.
 - ✅ Déconnexion : la session est fermée côté serveur ; bouton « Déconnecter tous mes appareils ».
+- ✅ Sessions : jeton d'accès valable 1 heure, renouvelé automatiquement (jeton de rafraîchissement conservé dans l'onglet du navigateur, effacé à sa fermeture) ; renouvellement refusé pour un compte bloqué ou clôturé ; la double authentification reste acquise pendant la session.
 
 ## 5. Protection du serveur et des sites
 

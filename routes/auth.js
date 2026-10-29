@@ -307,8 +307,8 @@ async function connexion(req, res, type) {
     verifierNouvelAppareil(req, user);
     noterActivite(table, profil).catch(() => {});
     return res.json(type === 'fa'
-      ? { token: authData.session.access_token, famille: pickFields(profil, FA_PUBLIC_FIELDS) }
-      : { token: authData.session.access_token, refuge: pickFields(profil, REFUGE_PUBLIC_FIELDS) });
+      ? { token: authData.session.access_token, refresh: authData.session.refresh_token, famille: pickFields(profil, FA_PUBLIC_FIELDS) }
+      : { token: authData.session.access_token, refresh: authData.session.refresh_token, refuge: pickFields(profil, REFUGE_PUBLIC_FIELDS) });
   } catch (err) {
     console.error(`login-${type} error:`, err);
     return res.status(500).json({ message: 'Erreur serveur.' });
@@ -655,6 +655,26 @@ router.post('/refuge-rejected', requireAdmin, async (req, res) => {
   }
 });
 
+// ─── POST /api/auth/rafraichir — { refresh } ─────────────────────────────────
+// Renouvelle la session (le jeton d'accès Supabase expire au bout d'une heure).
+// Le niveau de double authentification (aal2) est conservé par Supabase.
+router.post('/rafraichir', async (req, res) => {
+  try {
+    const refresh = req.body?.refresh;
+    if (typeof refresh !== 'string' || refresh.length < 10 || refresh.length > 500)
+      return res.status(400).json({ message: 'Session expirée, reconnectez-vous.' });
+    const { data, error } = await clientEphemere().auth.refreshSession({ refresh_token: refresh });
+    if (error || !data?.session) return res.status(401).json({ message: 'Session expirée, reconnectez-vous.', code: 'SESSION_EXPIREE' });
+    const profils = await profilsDe(data.user.id);
+    if (profils.some(p => p.ligne.bloque_le || p.ligne.cloture_le))
+      return res.status(403).json({ message: 'Ce compte est bloqué ou clôturé.', code: 'COMPTE_BLOQUE' });
+    return res.json({ token: data.session.access_token, refresh: data.session.refresh_token });
+  } catch (e) {
+    console.error('rafraichir error:', e);
+    return res.status(500).json({ message: 'Erreur serveur.' });
+  }
+});
+
 // ─── POST /api/auth/logout ────────────────────────────────────────────────────
 // Ferme la session de cet appareil (le jeton ne fonctionne plus ensuite)
 router.post('/logout', async (req, res) => {
@@ -705,8 +725,8 @@ router.post('/mfa/login', async (req, res) => {
     noterActivite(table, profil).catch(() => {});
 
     return res.json(type === 'fa'
-      ? { token: session.access_token, famille: pickFields(profil, FA_PUBLIC_FIELDS) }
-      : { token: session.access_token, refuge: pickFields(profil, REFUGE_PUBLIC_FIELDS) });
+      ? { token: session.access_token, refresh: session.refresh_token, famille: pickFields(profil, FA_PUBLIC_FIELDS) }
+      : { token: session.access_token, refresh: session.refresh_token, refuge: pickFields(profil, REFUGE_PUBLIC_FIELDS) });
   } catch (e) {
     console.error('mfa/login error:', e);
     return res.status(500).json({ message: 'Erreur serveur.' });
@@ -755,7 +775,7 @@ router.post('/mfa/confirmer', requireUser, async (req, res) => {
   try {
     const session = await verifierCode(req.token, factor_id, code);
     await journaliser(req, { evenement: 'mfa_active', user: req.user });
-    return res.json({ token: session.access_token });
+    return res.json({ token: session.access_token, refresh: session.refresh_token });
   } catch (e) {
     return res.status(400).json({ message: messageCode(e) });
   }
@@ -772,7 +792,7 @@ router.post('/mfa/desactiver', requireUser, async (req, res) => {
     catch (e) { return res.status(400).json({ message: messageCode(e) }); }
     await gotrue(`/factors/${facteur.id}`, { method: 'DELETE', token: session.access_token });
     await journaliser(req, { evenement: 'mfa_desactive', user: req.user });
-    return res.json({ token: session.access_token });
+    return res.json({ token: session.access_token, refresh: session.refresh_token });
   } catch (e) {
     console.error('mfa/desactiver error:', e);
     return res.status(500).json({ message: 'Erreur serveur.' });
