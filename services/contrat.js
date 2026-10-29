@@ -14,7 +14,7 @@ const PDFDocument = require('pdfkit');
 const { createClient } = require('@supabase/supabase-js');
 
 const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_KEY);
-const VERSION_MODELE = 'provisoire-2026-10-29d';
+const VERSION_MODELE = 'provisoire-2026-10-29e';
 
 const CONFIRMATIONS_FA = [
   "J'ai lu et compris l'intégralité du contrat de famille d'accueil.",
@@ -108,8 +108,14 @@ function rediger({ refuge: r, famille: f, animal: a, match: m }) {
         "Si la Famille d'Accueil souhaite adopter l'animal, elle en informe l'Association, qui étudie sa demande en priorité. À défaut, elle remet l'animal à l'Association ou à la famille adoptante désignée par celle-ci, selon les modalités convenues.",
         "L'Association peut reprendre l'animal immédiatement en cas de non-respect des obligations, de maltraitance ou de mise en danger de son bien-être.",
       ] },
-      { titre: 'Article 8 — Données personnelles', paragraphes: [
-        "Les données de la Famille d'Accueil sont traitées par l'Association pour la gestion de l'accueil, et par PetIA pour la mise en relation et la conservation du présent contrat, conformément au RGPD. Droits d'accès, de rectification et d'effacement : contact@petia.fr.",
+      { titre: 'Article 8 — Protection des données personnelles', paragraphes: [
+        `8.1 Responsable du traitement. ${r.nom}${adresseRef ? ', ' + adresseRef : ''}, est responsable du traitement des données personnelles de la Famille d'Accueil collectées dans le cadre du présent contrat.`,
+        "8.2 Finalité et base légale. Ces données sont traitées afin d'organiser et de suivre le placement de l'animal en famille d'accueil, à titre bénévole. Ce traitement est nécessaire à l'exécution du présent contrat (article 6.1.b du règlement (UE) 2016/679, dit RGPD).",
+        `8.3 Destinataires. Les données sont destinées ${sansEmoji(cond.rgpd_destinataires || "aux seuls membres et bénévoles de l'Association habilités à gérer le placement des animaux et le suivi des familles d'accueil")}.`,
+        `8.4 Transferts hors de l'Union européenne. ${sansEmoji(cond.rgpd_transfert || "Les données ne font l'objet d'aucun transfert en dehors de l'Union européenne, notamment vers les États-Unis.")}`,
+        `8.5 Durée de conservation. ${sansEmoji(cond.rgpd_conservation || "Les données sont conservées pendant la durée de l'accueil, puis le temps nécessaire au respect des obligations légales de l'Association et à la défense de ses droits.")}`,
+        `8.6 Droits de la Famille d'Accueil. Conformément au RGPD et à la loi n° 78-17 du 6 janvier 1978 dite « Informatique et Libertés », la Famille d'Accueil dispose d'un droit d'accès, de rectification, d'effacement, de limitation du traitement, d'opposition et de portabilité de ses données, ainsi que du droit de définir des directives relatives au sort de ses données après son décès. Pour exercer ces droits, elle écrit à : ${cond.rgpd_email || "[adresse e-mail à compléter par l'Association]"}${cond.rgpd_dpo ? ' (délégué à la protection des données : ' + sansEmoji(cond.rgpd_dpo) + ')' : ''}.`,
+        "8.7 Réclamation. Si elle estime, après avoir contacté l'Association, que ses droits ne sont pas respectés, la Famille d'Accueil peut introduire une réclamation auprès de la Commission nationale de l'informatique et des libertés (CNIL) : en ligne sur www.cnil.fr/fr/plaintes, ou par courrier à CNIL, Service des plaintes, 3 place de Fontenoy, 75007 Paris.",
       ] },
       { titre: 'Article 9 — Signature électronique', paragraphes: [
         "Les parties signent électroniquement sur PetIA (signature électronique simple au sens du règlement eIDAS n° 910/2014). Chaque signature est authentifiée par deux facteurs : le mot de passe du compte et un code à usage unique généré par l'application Google Authenticator du signataire. La date, l'heure, l'adresse IP et le navigateur de chaque signataire sont conservés avec l'empreinte numérique (SHA-256) du texte signé.",

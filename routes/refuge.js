@@ -28,9 +28,11 @@ const txt = (v, n) => (typeof v === 'string' && v.trim() ? v.trim().slice(0, n) 
 function nettoyerConditions(c = {}) {
   const out = {};
   for (const [k, vals] of Object.entries(CHOIX)) if (vals.includes(c[k])) out[k] = c[k];
-  for (const [k, n] of [['urgence', 300], ['indemnite', 300], ['regles', 2000], ['veto_liste', 6000]]) {
+  for (const [k, n] of [['urgence', 300], ['indemnite', 300], ['regles', 2000], ['veto_liste', 6000], ['rgpd_destinataires', 1000], ['rgpd_transfert', 1000], ['rgpd_conservation', 500], ['rgpd_dpo', 300]]) {
     const v = txt(c[k], n); if (v) out[k] = v;
   }
+  const mail = txt(c.rgpd_email, 200);
+  if (mail && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(mail)) out.rgpd_email = mail;
   // Lien vers la liste des vétérinaires partenaires (https uniquement)
   const lien = txt(c.veto_lien, 500);
   if (lien) { const u = /^https?:\/\//i.test(lien) ? lien : 'https://' + lien; if (/^https?:\/\/[^\s<>"]+\.[^\s<>"]+$/i.test(u)) out.veto_lien = u; }
@@ -48,6 +50,7 @@ function aCompleter(r) {
   if (!c.veto_mode) manque.push({ cle: 'conditions', txt: 'Vétérinaires : liste en ligne, liste remise avec l\'animal ou vétérinaire au choix' });
   else if (c.veto_mode === 'liste_lien' && !c.veto_lien) manque.push({ cle: 'conditions', txt: 'Lien vers votre liste de vétérinaires partenaires' });
   else if (c.veto_mode === 'liste_texte' && !c.veto_liste) manque.push({ cle: 'conditions', txt: 'Votre liste de vétérinaires partenaires' });
+  if (!c.rgpd_email) manque.push({ cle: 'donnees', txt: 'Adresse e-mail pour l\'exercice des droits sur les données personnelles' });
   return manque;
 }
 
