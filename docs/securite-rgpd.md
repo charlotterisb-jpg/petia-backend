@@ -45,6 +45,7 @@ Légende : ✅ en place · 🟡 décidé, en cours de construction · ⬜ à dé
 - ✅ Chaque utilisateur n'accède qu'à ses propres données (refuge → ses animaux et matchs ; FA → son dossier et ses propositions).
 - ✅ Une FA ne voit une proposition qu'après validation par le refuge ; les coordonnées du refuge ne lui sont transmises qu'après acceptation ; le numéro de puce ne lui est jamais transmis.
 - ✅ Un refuge ne voit des FA proposées que prénom, ville, code postal et critères (logement, expérience, disponibilité, note) ; jamais nom de famille, e-mail, téléphone ni adresse.
+- ✅ Annuaire des familles (décision DPO du 29/10/2026) : un refuge **validé** voit toutes les familles au dossier validé, même sans match, avec les mêmes données réduites (prénom, ville, code postal, logement, espèces acceptées, foyer, disponibilité, nombre d'accueils, note) ; chaque consultation est journalisée, alerte admin au-delà de 30 consultations en une heure.
 - ✅ Refuges : validation obligatoire par l'admin avant de publier des animaux ; SIRET contrôlé (14 chiffres + clé de Luhn) et vérifiable dans l'annuaire officiel des entreprises.
 - ✅ Familles : dossier validé par l'admin avant toute proposition.
 - ✅ Admins : liste tenue dans une table protégée ; double authentification (TOTP Google Authenticator) **obligatoire**, exigée par le serveur (niveau `aal2`).

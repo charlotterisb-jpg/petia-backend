@@ -148,7 +148,7 @@ async function verifierNouvelAppareil(req, user) {
 // ─── Consultation anormale de profils ────────────────────────────────────────
 // Un refuge consulte normalement les familles proposées pour quelques animaux ;
 // au-delà du seuil en une heure, l'admin est prévenu (une alerte par heure au plus).
-const SEUILS_CONSULTATION = { consultation_matchs: 60, consultation_dossier_fa: 80 };
+const SEUILS_CONSULTATION = { consultation_matchs: 60, consultation_dossier_fa: 80, consultation_annuaire: 30 };
 
 async function surveillerConsultations(req, evenement, user) {
   try {

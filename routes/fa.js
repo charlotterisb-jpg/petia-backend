@@ -82,6 +82,29 @@ router.get('/moi', requireFamille, async (req, res) => {
   }
 });
 
+// ─── PATCH /api/fa/profil — { profil } : logement et quotidien ───────────────
+// La famille met à jour son foyer ; si son dossier est validé, les animaux
+// disponibles sont recalculés pour elle.
+router.patch('/profil', requireFamille, async (req, res) => {
+  try {
+    const maj = nettoyerProfil(req.body?.profil || {});
+    if (!Object.keys(maj).length) return res.status(400).json({ message: 'Aucune information à enregistrer.' });
+    maj.updated_at = new Date().toISOString();
+    const { data: f, error } = await supabaseAdmin.from('familles_accueil').update(maj).eq('id', req.famId).select('statut_dossier').single();
+    if (error) throw error;
+    journaliser(req, { evenement: 'profil_modifie', user: req.user, role: 'fa' });
+    if (f?.statut_dossier === 'valide') {
+      const { lancerMatching } = require('./matching');
+      const { data: animaux } = await supabaseAdmin.from('animaux').select('*').eq('statut', 'disponible').order('created_at', { ascending: false }).limit(20);
+      (async () => { for (const a of animaux || []) await lancerMatching(a).catch(e => console.error('Rematch profil FA:', e.message)); })();
+    }
+    return res.json({ message: 'Votre foyer est mis à jour.' });
+  } catch (e) {
+    console.error('PATCH /fa/profil error:', e);
+    return res.status(500).json({ message: 'Erreur serveur.' });
+  }
+});
+
 // ─── PATCH /api/fa/disponibilite — { disponible_le } ─────────────────────────
 router.patch('/disponibilite', requireFamille, async (req, res) => {
   const v = req.body?.disponible_le;

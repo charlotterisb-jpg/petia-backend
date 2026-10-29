@@ -91,6 +91,7 @@ async function lancerMatching(animal) {
   return {
     familles_validees: calcul.total,
     exclues_par_regles: calcul.exclues,
+    raisons_exclusion: calcul.raisons_exclusion,
     eligibles: calcul.eligibles,
     ia_utilisee: iaDisponible(),
   };
@@ -104,6 +105,32 @@ function consultation(req, animal, matchs) {
 }
 
 // ─── Routes ──────────────────────────────────────────────────────────────────
+// ─── GET /api/matching/annuaire — toutes les familles validées ──────────────
+// Réservé aux refuges validés. Données réduites : jamais nom de famille,
+// e-mail, téléphone ni adresse. Chaque consultation est journalisée et surveillée.
+const COLONNES_ANNUAIRE =
+  'id, prenom, ville, code_postal, type_logement, jardin, hauteur_cloture, enfants, animaux_actuels, heures_seul, ' +
+  'presence_journee, experience_chien, peut_accueillir, nac_acceptes, disponible_le, duree_accueil, nb_accueils, note_moyenne, previsitee';
+
+router.get('/annuaire', requireAuth, async (req, res) => {
+  try {
+    const { data: refuge } = await supabase.from('refuges').select('statut').eq('id', req.user.id).maybeSingle();
+    if (!refuge) return res.status(403).json({ message: 'Réservé aux refuges.' });
+    if (refuge.statut !== 'actif') return res.status(403).json({ message: 'L\'annuaire est accessible une fois votre structure validée par PetIA.' });
+    const { data, error } = await supabase.from('familles_accueil').select(COLONNES_ANNUAIRE)
+      .eq('statut_dossier', 'valide').is('cloture_le', null).is('bloque_le', null)
+      .order('disponible_le', { ascending: true }).limit(500);
+    if (error) throw error;
+    const familles = (data || []).map(f => ({ ...f, enfants: Array.isArray(f.enfants) ? f.enfants.length > 0 : null }));
+    journaliser(req, { evenement: 'consultation_annuaire', user: req.user, role: 'refuge', details: { familles: familles.length } })
+      .then(() => surveillerConsultations(req, 'consultation_annuaire', req.user));
+    return res.json({ familles });
+  } catch (e) {
+    console.error('GET /matching/annuaire error:', e);
+    return res.status(500).json({ message: 'Erreur serveur.' });
+  }
+});
+
 router.post('/:animalId', requireAuth, async (req, res) => {
   try {
     const animal = await animalDuRefuge(req.params.animalId, req.user.id);

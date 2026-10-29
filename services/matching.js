@@ -332,9 +332,11 @@ function normaliserReponseIA(r) {
 async function calculerMatchs(animal, familles, { analyserIA = null, maxIA = 10, maxResultats = 5 } = {}) {
   const eligibles = [];
   let exclues = 0;
+  const raisons = {}; // raison → nombre de familles écartées (aucune donnée personnelle)
 
   for (const f of familles) {
-    if (reglesEliminatoires(animal, f).length) { exclues++; continue; }
+    const r0 = reglesEliminatoires(animal, f);
+    if (r0.length) { exclues++; for (const r of new Set(r0)) raisons[r] = (raisons[r] || 0) + 1; continue; }
     const r = scoreRegles(animal, f);
     eligibles.push({ famille: f, scoreRegles: r.score, attention: r.attention });
   }
@@ -374,6 +376,7 @@ async function calculerMatchs(animal, familles, { analyserIA = null, maxIA = 10,
   return {
     total: familles.length,
     exclues,
+    raisons_exclusion: raisons,
     eligibles: eligibles.length,
     resultats: resultats.slice(0, maxResultats),
   };
