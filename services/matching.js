@@ -87,7 +87,10 @@ function reglesEliminatoires(animal, f) {
   // Clôture
   if (animal.cloture_min && animal.cloture_min !== 'aucune') {
     const hauteur = CLOTURE[f.hauteur_cloture] ?? null;
-    if (animal.cloture_min === 'cloture_obligatoire') {
+    // Logement non renseigné : jardin inconnu, la famille n'est pas écartée (point d'attention)
+    const jardinConnu = !!f.type_logement || f.hauteur_cloture != null;
+    if (!jardinConnu) { /* voir scoreRegles */ }
+    else if (animal.cloture_min === 'cloture_obligatoire') {
       if (f.jardin === false || hauteur === 0) raisons.push('Jardin clôturé obligatoire');
     } else if (f.jardin === false) {
       raisons.push(`Clôture ${animal.cloture_min} requise (pas de jardin)`);
@@ -172,6 +175,14 @@ function reglesNac(animal, f) {
 function scoreRegles(animal, f) {
   let score = 60;
   const attention = [];
+
+  // Profil incomplet : à vérifier par le refuge
+  if (!f.type_logement) {
+    score -= 8;
+    attention.push(animal.cloture_min && animal.cloture_min !== 'aucune'
+      ? 'Logement non renseigné : jardin et clôture à vérifier'
+      : 'Logement non renseigné');
+  }
 
   // Disponibilité
   if (f.disponible_le === 'maintenant') score += 10;
