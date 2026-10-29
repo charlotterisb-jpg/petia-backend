@@ -14,7 +14,7 @@ const PDFDocument = require('pdfkit');
 const { createClient } = require('@supabase/supabase-js');
 
 const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_KEY);
-const VERSION_MODELE = 'provisoire-2026-10-29c';
+const VERSION_MODELE = 'provisoire-2026-10-29d';
 
 const CONFIRMATIONS_FA = [
   "J'ai lu et compris l'intégralité du contrat de famille d'accueil.",
@@ -75,7 +75,7 @@ function rediger({ refuge: r, famille: f, animal: a, match: m }) {
       { titre: "Article 2 — Remise de l'animal et durée", paragraphes: [
         `Remise : ${MODES[mod.mode] || 'modalités à convenir entre les parties'}${mod.date ? ', prévue le ' + dateFr(mod.date) : ''}${mod.lieu ? ', lieu : ' + sansEmoji(mod.lieu) : ''}.${mod.note ? ' Précisions : ' + sansEmoji(mod.note) + '.' : ''}`,
         `L'accueil débute à la remise de l'animal${c.duree_accueil ? ' pour une durée prévue de ' + sansEmoji(c.duree_accueil) : ''}, jusqu'à l'adoption de l'animal ou la fin anticipée du contrat. La durée peut être prolongée d'un commun accord.`,
-        "La Famille d'Accueil respecte un préavis de 7 jours avant toute demande de fin d'accueil, sauf urgence.",
+        "La Famille d'Accueil respecte un préavis de 15 jours avant toute demande de fin d'accueil, sauf urgence.",
       ] },
       { titre: "Article 3 — Obligations de la Famille d'Accueil", paragraphes: [
         "Fournir à l'animal une alimentation adaptée, de l'eau fraîche en permanence, les sorties et l'exercice nécessaires ; ne jamais utiliser de méthodes punitives.",
@@ -98,8 +98,11 @@ function rediger({ refuge: r, famille: f, animal: a, match: m }) {
         "Elle prévient également l'Association dans les 2 heures en cas de fugue, morsure, comportement agressif inhabituel ou impossibilité de poursuivre l'accueil.",
         `Contact de l'Association : ${[referent, r.telephone, r.email].filter(Boolean).join(' · ') || 'coordonnées disponibles sur PetIA'}.`,
       ] },
-      { titre: 'Article 6 — Responsabilité civile', paragraphes: [
-        "Conformément à l'article 1243 du Code civil, la Famille d'Accueil a la garde de l'animal dès sa prise en charge et répond des dommages qu'il cause aux tiers. Elle certifie être couverte par une assurance responsabilité civile incluant la garde d'animaux.",
+      { titre: "Article 6 — Garde de l'animal et responsabilité civile", paragraphes: [
+        "6.1 Propriété. L'Association demeure propriétaire de l'animal pendant toute la durée de l'accueil. Le présent contrat ne transfère à la Famille d'Accueil aucun droit de propriété sur l'animal, mais uniquement sa garde.",
+        "6.2 Notion de garde. Le gardien d'un animal est la personne qui exerce sur lui, en fait, les pouvoirs d'usage, de direction et de contrôle. Le propriétaire est présumé gardien, mais la garde peut être transférée à un tiers. À compter de la remise de l'animal et jusqu'à sa restitution, la Famille d'Accueil, qui l'héberge, le nourrit, le promène et décide de son usage au quotidien, en a la garde.",
+        "6.3 Responsabilité. Aux termes de l'article 1243 du Code civil, « le propriétaire d'un animal, ou celui qui s'en sert, pendant qu'il est à son usage, est responsable du dommage que l'animal a causé, soit que l'animal fût sous sa garde, soit qu'il fût égaré ou échappé ». Cette responsabilité s'applique sans faute : la victime n'a pas à prouver une faute du gardien, qui ne peut s'exonérer qu'en démontrant une cause étrangère (force majeure ou faute de la victime). En sa qualité de gardienne, la Famille d'Accueil répond donc des dommages causés aux tiers par l'animal pendant l'accueil, y compris lorsqu'il s'est échappé ou égaré.",
+        "6.4 Assurance. La Famille d'Accueil certifie être couverte par une assurance responsabilité civile incluant la garde d'animaux confiés, et s'engage à la maintenir pendant toute la durée de l'accueil. Elle déclare tout sinistre à son assureur et en informe l'Association sans délai.",
       ] },
       { titre: "Article 7 — Fin de l'accueil et restitution", paragraphes: [
         "Si la Famille d'Accueil souhaite adopter l'animal, elle en informe l'Association, qui étudie sa demande en priorité. À défaut, elle remet l'animal à l'Association ou à la famille adoptante désignée par celle-ci, selon les modalités convenues.",
