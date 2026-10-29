@@ -37,7 +37,7 @@ let diagnosticIp = false;
 app.use((req, res, next) => {
   const cf = req.headers['cf-connecting-ip'] || req.headers['true-client-ip'];
   req.ipClient = (typeof cf === 'string' && /^[0-9a-fA-F:.]{3,45}$/.test(cf)) ? cf : req.ip;
-  if (!diagnosticIp) {
+  if (!diagnosticIp && req.headers['x-forwarded-for']) {
     diagnosticIp = true;
     const xff = String(req.headers['x-forwarded-for'] || '').split(',').filter(Boolean).length;
     console.log(`🌍 IP visiteur : en-tête Cloudflare ${cf ? 'présent' : 'absent'}, ${xff} adresse(s) dans X-Forwarded-For`);
