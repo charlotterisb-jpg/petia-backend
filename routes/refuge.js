@@ -43,12 +43,39 @@ function nettoyerConditions(c = {}) {
   return out;
 }
 
+// Contrat : modèle PetIA personnalisé, ou contrat propre à l'association
+//   { mode: 'modele' | 'propre', modifs: { id: { t, b } }, clauses, titre, texte }
+function nettoyerContrat(x = {}, existant = {}) {
+  const { paragraphesModifiables, court, espaces } = require('../services/contrat');
+  const out = { mode: x.mode === 'propre' ? 'propre' : 'modele' };
+  const origines = paragraphesModifiables();
+  const modifs = {};
+  const src = x.modifs && typeof x.modifs === 'object' ? x.modifs : (existant.modifs || {});
+  for (const [id, v] of Object.entries(src)) {
+    if (!origines[id]) continue;
+    const t = espaces(typeof v === 'string' ? v : v?.t).slice(0, 4000);
+    if (t === espaces(origines[id])) continue; // identique au modèle : rien à garder
+    // b : empreinte du texte du modèle au moment de la modification (signale une évolution du modèle)
+    const ancien = existant.modifs?.[id];
+    modifs[id] = { t, b: ancien && ancien.t === t ? ancien.b : court(origines[id]) };
+  }
+  if (Object.keys(modifs).length) out.modifs = modifs;
+  const clauses = txt(x.clauses !== undefined ? x.clauses : existant.clauses, 6000); if (clauses) out.clauses = clauses;
+  const titre = txt(x.titre !== undefined ? x.titre : existant.titre, 150); if (titre) out.titre = titre;
+  const texte = txt(x.texte !== undefined ? x.texte : existant.texte, 60000); if (texte) out.texte = texte;
+  return out;
+}
+
 // Ce qu'il manque pour qu'un contrat complet puisse être établi
 function aCompleter(r) {
   const c = r.details?.conditions || {};
   const manque = [];
   if (!r.adresse || !r.telephone) manque.push({ cle: 'infos', txt: 'Adresse et téléphone de la structure' });
   if (!r.contact_nom && !r.contact_prenom) manque.push({ cle: 'infos', txt: 'Contact référent' });
+  if (r.details?.contrat?.mode === 'propre') {
+    if (!r.details.contrat.texte) manque.push({ cle: 'contrat', txt: 'Le texte de votre contrat' });
+    return manque;
+  }
   if (!c.nourriture || !c.veterinaire) manque.push({ cle: 'conditions', txt: 'Prise en charge de la nourriture et des frais vétérinaires' });
   if (!c.veto_mode) manque.push({ cle: 'conditions', txt: 'Vétérinaires : liste en ligne, liste remise avec l\'animal ou vétérinaire au choix' });
   else if (c.veto_mode === 'liste_lien' && !c.veto_lien) manque.push({ cle: 'conditions', txt: 'Lien vers votre liste de vétérinaires partenaires' });
@@ -83,6 +110,8 @@ router.patch('/moi', requireUser, async (req, res) => {
       if (i.details) maj.details = { ...(r.details || {}), ...i.details };
     }
     if (req.body?.conditions) maj.details = { ...(maj.details || r.details || {}), conditions: nettoyerConditions(req.body.conditions) };
+    if (req.body?.contrat && typeof req.body.contrat === 'object')
+      maj.details = { ...(maj.details || r.details || {}), contrat: nettoyerContrat(req.body.contrat, r.details?.contrat || {}) };
     if (Array.isArray(req.body?.documents_defaut)) {
       const { TYPES_DOC } = require('../services/documents');
       const liste = req.body.documents_defaut.filter(d => TYPES_DOC[d?.type]).slice(0, 10).map(d => ({
@@ -105,15 +134,16 @@ router.patch('/moi', requireUser, async (req, res) => {
 router.get('/modele-contrat', requireUser, async (req, res) => {
   try {
     const r = await refugeDe(req, res); if (!r) return;
-    const { rediger } = require('../services/contrat');
+    const { rediger, paragraphesModifiables } = require('../services/contrat');
+    const edition = req.query.edition === '1';
     const contenu = rediger({
       refuge: r,
       famille: { prenom: 'Prénom', nom: 'NOM de la famille', code_postal: '00000', ville: 'Ville' },
       animal: { nom: '[nom de l\'animal]', espece: 'chien', race: '[race]', sexe: '[sexe]', age_annees: null, description: '[consignes saisies sur la fiche de l\'animal]', details: { commun: {} } },
       match: { modalites: { mode: 'a_convenir' } },
-    });
-    contenu.avertissement = 'Aperçu : les éléments entre crochets sont remplis automatiquement pour chaque accueil (famille, animal, modalités de remise).';
-    return res.json({ contenu });
+    }, { edition, forcerModele: edition });
+    contenu.avertissement = 'Aperçu : les éléments entre crochets sont remplis automatiquement pour chaque accueil (famille, animal, modalités de remise). En gras : ce qui est complété ou modifié par rapport au modèle PetIA.';
+    return res.json({ contenu, ...(edition ? { origines: paragraphesModifiables() } : {}) });
   } catch (e) {
     console.error('GET /refuge/modele-contrat error:', e);
     return res.status(500).json({ message: 'Erreur serveur.' });
@@ -122,3 +152,5 @@ router.get('/modele-contrat', requireUser, async (req, res) => {
 
 module.exports = router;
 module.exports.MATERIEL = MATERIEL;
+module.exports.nettoyerContrat = nettoyerContrat;
+module.exports.aCompleter = aCompleter;
