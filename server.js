@@ -65,6 +65,13 @@ app.use((err, req, res, next) => {
 
 app.listen(PORT, () => {
   console.log(`✅ PetIA API démarrée sur le port ${PORT}`);
+  // Diagnostic sans divulgation : type de la clé serveur (jamais sa valeur)
+  const cle = process.env.SUPABASE_SERVICE_KEY || '';
+  let type = !cle ? 'ABSENTE' : cle.startsWith('sb_secret_') ? 'secret (OK)' : cle.startsWith('sb_publishable_') ? 'publishable (ERREUR : clé publique)' : 'inconnue';
+  if (cle.split('.').length === 3) {
+    try { const r = JSON.parse(Buffer.from(cle.split('.')[1], 'base64url').toString()).role; type = r === 'service_role' ? 'JWT service_role (OK)' : `JWT ${r} (ERREUR : pas service_role)`; } catch { type = 'JWT illisible'; }
+  }
+  console.log(`🔑 Clé Supabase serveur : ${type}`);
   // Suppression automatique des données arrivées au terme de leur durée de conservation
   if (process.env.NODE_ENV !== 'test') require('./services/purge').planifierPurge();
 });
