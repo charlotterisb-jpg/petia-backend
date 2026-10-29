@@ -122,7 +122,7 @@ const COLONNES_ANIMAL_FA =
   'compatible_enfants, age_enfants_min, compatible_chiens, compatible_chats, temps_seul_max, presence_constante, balades_min_jour, niveau_exercice, ' +
   'escaliers, cloture_min, sortie_sans_laisse, vehicule_requis, experience_fa_requise, ' +
   'description, comportement, historique, besoins_specifiques, details, photo_url, ' +
-  'refuge:refuges(nom, type_structure, adresse, ville, code_postal, telephone, email, site_web, contact_prenom, contact_nom, contact_fonction, statut, cloture_le, bloque_le)';
+  'refuge:refuges(nom, type_structure, adresse, ville, code_postal, telephone, email, site_web, contact_prenom, contact_nom, contact_fonction, statut, cloture_le, bloque_le, details)';
 // Coordonnées et contact du refuge : seulement une fois la proposition acceptée par la famille
 const CONTACT_REFUGE = ['telephone', 'email', 'contact_prenom', 'contact_nom', 'contact_fonction'];
 
@@ -143,7 +143,12 @@ router.get('/propositions', requireFamille, async (req, res) => {
     const contrats = Object.fromEntries((cs || []).map(c => [c.match_id, c]));
     // Les animaux d'un refuge suspendu ou refusé n'apparaissent plus
     const propositions = (data || []).filter(m => m.animal?.refuge?.statut === 'actif' && !m.animal.refuge.cloture_le && !m.animal.refuge.bloque_le).map(m => {
-      if (m.animal?.refuge) { delete m.animal.refuge.statut; delete m.animal.refuge.cloture_le; delete m.animal.refuge.bloque_le; }
+      if (m.animal?.refuge) {
+        const c = m.animal.refuge.details?.conditions || {};
+        // Seules les informations utiles à la famille : vétérinaires et urgences
+        m.animal.refuge.veterinaires = { mode: c.veto_mode || null, liste: c.veto_liste || null, lien: c.veto_lien || null, urgence: c.urgence || null };
+        for (const k of ['statut', 'cloture_le', 'bloque_le', 'details']) delete m.animal.refuge[k];
+      }
       if (m.animal?.details?.commun) {
         const { puce, ...commun } = m.animal.details.commun;
         m.animal.details = { ...m.animal.details, commun };

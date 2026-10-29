@@ -20,7 +20,7 @@ const CHOIX = {
   nourriture: ['refuge_fournit', 'rembourse', 'famille'],
   veterinaire: ['refuge_100', 'refuge_sur_accord', 'partage'],
   transport: ['refuge', 'famille', 'selon_cas'],
-  veto_mode: ['liste_lien', 'liste_remise', 'au_choix'],
+  veto_mode: ['liste_texte', 'liste_lien', 'liste_remise', 'au_choix'],
 };
 const MATERIEL = ['laisse', 'gamelles', 'couchage', 'caisse', 'jouets', 'litiere', 'cage'];
 const txt = (v, n) => (typeof v === 'string' && v.trim() ? v.trim().slice(0, n) : null);
@@ -28,7 +28,7 @@ const txt = (v, n) => (typeof v === 'string' && v.trim() ? v.trim().slice(0, n) 
 function nettoyerConditions(c = {}) {
   const out = {};
   for (const [k, vals] of Object.entries(CHOIX)) if (vals.includes(c[k])) out[k] = c[k];
-  for (const [k, n] of [['urgence', 300], ['indemnite', 300], ['regles', 2000]]) {
+  for (const [k, n] of [['urgence', 300], ['indemnite', 300], ['regles', 2000], ['veto_liste', 6000]]) {
     const v = txt(c[k], n); if (v) out[k] = v;
   }
   // Lien vers la liste des vétérinaires partenaires (https uniquement)
@@ -47,6 +47,7 @@ function aCompleter(r) {
   if (!c.nourriture || !c.veterinaire) manque.push({ cle: 'conditions', txt: 'Prise en charge de la nourriture et des frais vétérinaires' });
   if (!c.veto_mode) manque.push({ cle: 'conditions', txt: 'Vétérinaires : liste en ligne, liste remise avec l\'animal ou vétérinaire au choix' });
   else if (c.veto_mode === 'liste_lien' && !c.veto_lien) manque.push({ cle: 'conditions', txt: 'Lien vers votre liste de vétérinaires partenaires' });
+  else if (c.veto_mode === 'liste_texte' && !c.veto_liste) manque.push({ cle: 'conditions', txt: 'Votre liste de vétérinaires partenaires' });
   return manque;
 }
 

@@ -46,6 +46,7 @@ function rediger({ refuge: r, famille: f, animal: a, match: m }) {
   const TRANSPORT = { refuge: "Les trajets liés à l'accueil (vétérinaire, visites) sont assurés ou remboursés par l'Association.", famille: "Les trajets liés à l'accueil sont à la charge de la Famille d'Accueil.", selon_cas: "La prise en charge des trajets est convenue au cas par cas avec l'Association." };
   const MATERIEL_TXT = { laisse: 'laisse et collier ou harnais', gamelles: 'gamelles', couchage: 'couchage', caisse: 'caisse de transport', jouets: 'jouets', litiere: 'litière et bac', cage: 'cage ou enclos' };
   const VETO_MODE = {
+    liste_texte: "La Famille d'Accueil consulte en priorité un vétérinaire partenaire de l'Association, parmi la liste suivante : " + sansEmoji(cond.veto_liste || '').replace(/\s*\n\s*/g, ' ; ') + '.',
     liste_lien: "La Famille d'Accueil consulte en priorité un vétérinaire partenaire de l'Association, dont la liste est disponible à l'adresse suivante : " + (cond.veto_lien || 'communiquée par l\'Association') + '.',
     liste_remise: "La Famille d'Accueil consulte en priorité un vétérinaire partenaire de l'Association, dont la liste lui est remise avec l'animal.",
     au_choix: "La Famille d'Accueil peut consulter le vétérinaire de son choix, dans le respect des conditions de prise en charge prévues à l'article 4.",
