@@ -89,5 +89,24 @@ router.patch('/moi', requireUser, async (req, res) => {
   }
 });
 
+// ─── GET /api/refuge/modele-contrat — aperçu avec une famille et un animal fictifs
+router.get('/modele-contrat', requireUser, async (req, res) => {
+  try {
+    const r = await refugeDe(req, res); if (!r) return;
+    const { rediger } = require('../services/contrat');
+    const contenu = rediger({
+      refuge: r,
+      famille: { prenom: 'Prénom', nom: 'NOM de la famille', code_postal: '00000', ville: 'Ville' },
+      animal: { nom: '[nom de l\'animal]', espece: 'chien', race: '[race]', sexe: '[sexe]', age_annees: null, description: '[consignes saisies sur la fiche de l\'animal]', details: { commun: {} } },
+      match: { modalites: { mode: 'a_convenir' } },
+    });
+    contenu.avertissement = 'Aperçu : les éléments entre crochets sont remplis automatiquement pour chaque accueil (famille, animal, modalités de remise).';
+    return res.json({ contenu });
+  } catch (e) {
+    console.error('GET /refuge/modele-contrat error:', e);
+    return res.status(500).json({ message: 'Erreur serveur.' });
+  }
+});
+
 module.exports = router;
 module.exports.MATERIEL = MATERIEL;
