@@ -31,7 +31,9 @@ const COLONNES_FAMILLE_MATCHING = [
 
 // Ce que le refuge voit de la famille dans la liste des matchs
 const COLONNES_FAMILLE_AFFICHAGE =
-  'prenom, ville, code_postal, type_logement, jardin, nb_accueils, note_moyenne, disponible_le, experience_chien';
+  'prenom, ville, code_postal, type_logement, jardin, nb_accueils, note_moyenne, disponible_le, experience_chien, nom, telephone, email, adresse';
+// Coordonnées de la famille : seulement une fois qu'elle a accepté la proposition
+const CONTACT_FAMILLE = ['nom', 'telephone', 'email', 'adresse'];
 
 // Session : contrôle commun (exige le code si la double authentification est activée)
 const requireAuth = require('../middleware/session').requireUser;
@@ -49,7 +51,13 @@ async function listerMatchs(animalId) {
     .eq('animal_id', animalId)
     .order('score', { ascending: false });
   if (error) throw error;
-  return data || [];
+  const ids = (data || []).map(m => m.id);
+  const { data: cs } = ids.length ? await supabase.from('contrats').select('match_id, statut, fa_signe_le, refuge_signe_le').in('match_id', ids) : { data: [] };
+  const contrats = Object.fromEntries((cs || []).map(c => [c.match_id, c]));
+  return (data || []).map(m => {
+    if (m.famille && !(m.reponse_fa === 'oui' && ['accepte', 'en_cours', 'termine'].includes(m.statut))) CONTACT_FAMILLE.forEach(k => delete m.famille[k]);
+    return { ...m, contrat: contrats[m.id] || null };
+  });
 }
 
 // ─── Moteur : calcule et enregistre les matchs d'un animal ───────────────────
@@ -111,6 +119,33 @@ function consultation(req, animal, matchs) {
 const COLONNES_ANNUAIRE =
   'id, prenom, ville, code_postal, type_logement, jardin, hauteur_cloture, enfants, animaux_actuels, heures_seul, ' +
   'presence_journee, experience_chien, peut_accueillir, nac_acceptes, disponible_le, duree_accueil, nb_accueils, note_moyenne, previsitee';
+
+// ─── GET /api/matching/a-faire — notifications du tableau de bord refuge ────
+router.get('/a-faire', requireAuth, async (req, res) => {
+  try {
+    const { data: animaux } = await supabase.from('animaux').select('id, nom').eq('refuge_id', req.user.id);
+    const ids = (animaux || []).map(a => a.id);
+    if (!ids.length) return res.json({ elements: [] });
+    const noms = Object.fromEntries(animaux.map(a => [a.id, a.nom]));
+    const { data: matchs } = await supabase.from('matchs').select('id, animal_id, statut, reponse_fa').in('animal_id', ids).in('statut', ['propose', 'accepte']);
+    const mids = (matchs || []).map(m => m.id);
+    const { data: cs } = mids.length ? await supabase.from('contrats').select('match_id, statut').in('match_id', mids) : { data: [] };
+    const contrat = Object.fromEntries((cs || []).map(c => [c.match_id, c.statut]));
+    const elements = [];
+    for (const m of matchs || []) {
+      const nom = noms[m.animal_id];
+      if (contrat[m.id] === 'a_signer_refuge') elements.push({ type: 'contrat', animal_id: m.animal_id, texte: `Contrat à contresigner pour ${nom}` });
+      else if (m.statut === 'accepte' && m.reponse_fa === 'oui' && contrat[m.id] === 'signe') elements.push({ type: 'arrivee', animal_id: m.animal_id, texte: `Contrat signé pour ${nom} : confirmez l'arrivée le moment venu` });
+      else if (m.statut === 'accepte' && m.reponse_fa === 'oui') elements.push({ type: 'attente', animal_id: m.animal_id, texte: `Une famille a accepté ${nom} : signature du contrat en cours` });
+    }
+    const aExaminer = new Set((matchs || []).filter(m => m.statut === 'propose').map(m => m.animal_id));
+    for (const id of aExaminer) elements.push({ type: 'propose', animal_id: id, texte: `Familles proposées à examiner pour ${noms[id]}` });
+    return res.json({ elements });
+  } catch (e) {
+    console.error('GET /matching/a-faire error:', e);
+    return res.status(500).json({ message: 'Erreur serveur.' });
+  }
+});
 
 router.get('/annuaire', requireAuth, async (req, res) => {
   try {
@@ -217,6 +252,73 @@ router.patch('/match/:matchId/modalites', requireAuth, async (req, res) => {
   }
 });
 
+// ═══ CONTRAT D'ACCUEIL (refuge) ══════════════════════════════════════════════
+const { obtenirContrat, pourAffichage, integre, pdf, authentifierSignataire } = require('../services/contrat');
+
+router.get('/match/:matchId/contrat', requireAuth, async (req, res) => {
+  try {
+    const r = await matchDuRefuge(req.params.matchId, req.user.id);
+    if (!r) return res.status(404).json({ message: 'Match introuvable.' });
+    const c = await obtenirContrat(r.m.id);
+    if (!c) return res.status(409).json({ message: 'Le contrat est créé quand la famille accepte la proposition.' });
+    journaliser(req, { evenement: 'contrat_consulte', user: req.user, role: 'refuge', cible_type: 'contrat', cible_id: c.id });
+    return res.json({ contrat: pourAffichage(c) });
+  } catch (e) {
+    console.error('GET /matching/contrat error:', e);
+    return res.status(500).json({ message: 'Erreur serveur.' });
+  }
+});
+
+// { nom, mot_de_passe, code? } — contresignature après la famille
+router.post('/match/:matchId/contrat/signer', requireAuth, async (req, res) => {
+  try {
+    const r = await matchDuRefuge(req.params.matchId, req.user.id);
+    if (!r) return res.status(404).json({ message: 'Match introuvable.' });
+    const c = await obtenirContrat(r.m.id, { creer: false });
+    if (!c) return res.status(409).json({ message: 'Contrat indisponible.' });
+    if (c.statut === 'a_signer_fa') return res.status(409).json({ message: 'La famille doit signer en premier.' });
+    if (c.statut !== 'a_signer_refuge') return res.status(409).json({ message: 'Ce contrat est déjà signé.' });
+    if (!integre(c)) return res.status(409).json({ message: 'Le contrat a été altéré : contactez PetIA.' });
+    const nom = String(req.body?.nom || '').trim();
+    if (nom.length < 3) return res.status(400).json({ message: 'Saisissez le nom et la fonction du signataire.' });
+    const erreur = await authentifierSignataire(req.user, req.body?.mot_de_passe, req.body?.code);
+    if (erreur) {
+      journaliser(req, { evenement: 'contrat_signature_echec', user: req.user, role: 'refuge', cible_type: 'contrat', cible_id: c.id });
+      return res.status(401).json({ message: erreur });
+    }
+    const { error } = await supabase.from('contrats').update({
+      statut: 'signe', refuge_signe_le: new Date().toISOString(), refuge_nom_signe: nom.slice(0, 160),
+      refuge_ip: req.ipClient || req.ip, refuge_appareil: String(req.headers['user-agent'] || '').slice(0, 300),
+    }).eq('id', c.id).eq('statut', 'a_signer_refuge');
+    if (error) throw error;
+    journaliser(req, { evenement: 'contrat_signe_refuge', user: req.user, role: 'refuge', cible_type: 'contrat', cible_id: c.id });
+    // Prévenir la famille
+    (async () => {
+      const { envoyerMail, SITE, esc } = require('../services/journal');
+      const { data: f } = await supabase.from('familles_accueil').select('email, prenom').eq('id', r.m.famille_id).maybeSingle();
+      if (f?.email) await envoyerMail({ to: f.email, subject: '✅ Votre contrat d\'accueil est signé', badge: '✅', couleur: '#10B981', label: 'Accueil',
+        title: `Contrat signé pour ${esc(r.animal.nom)}`, body: 'Le refuge a contresigné votre contrat d\'accueil. Vous pouvez le télécharger depuis votre espace.', ctaText: 'Mon espace →', ctaHref: SITE });
+    })().catch(() => {});
+    return res.json({ message: 'Contrat signé par les deux parties. Vous pouvez confirmer l\'arrivée de l\'animal le moment venu.' });
+  } catch (e) {
+    console.error('POST /matching/contrat/signer error:', e);
+    return res.status(500).json({ message: 'Erreur serveur.' });
+  }
+});
+
+router.get('/match/:matchId/contrat/pdf', requireAuth, async (req, res) => {
+  try {
+    const r = await matchDuRefuge(req.params.matchId, req.user.id);
+    const c = r && await obtenirContrat(r.m.id, { creer: false });
+    if (!c) return res.status(404).json({ message: 'Contrat introuvable.' });
+    journaliser(req, { evenement: 'contrat_telecharge', user: req.user, role: 'refuge', cible_type: 'contrat', cible_id: c.id });
+    return pdf(c, res);
+  } catch (e) {
+    console.error('GET /matching/contrat/pdf error:', e);
+    if (!res.headersSent) res.status(500).json({ message: 'Erreur serveur.' });
+  }
+});
+
 // ═══ ACCUEIL : arrivée chez la famille, puis fin de l'accueil ═══════════════
 
 // Date « AAAA-MM-JJ » raisonnable (un an en arrière à deux mois en avant), sinon aujourd'hui
@@ -245,6 +347,9 @@ router.patch('/match/:matchId/arrivee', requireAuth, async (req, res) => {
       return res.status(409).json({ message: 'La famille doit d\'abord accepter la proposition.' });
     if (animal.statut !== 'disponible')
       return res.status(409).json({ message: 'L\'animal est déjà en accueil ou n\'est plus disponible.' });
+    const { data: contrat } = await supabase.from('contrats').select('statut').eq('match_id', m.id).maybeSingle();
+    if (contrat?.statut !== 'signe')
+      return res.status(409).json({ message: 'Le contrat d\'accueil doit d\'abord être signé par la famille puis par le refuge.' });
 
     const maintenant = new Date().toISOString();
     const debut = dateAccueil(req.body?.date_debut);

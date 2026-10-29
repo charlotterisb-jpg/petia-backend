@@ -32,6 +32,7 @@ Légende : ✅ en place · 🟡 décidé, en cours de construction · ⬜ à dé
 | `animaux` | — (animaux) | fiche animal ; numéro de puce |
 | `matchs` | FA (indirect) | score, recommandation, réponse de la FA, dates d'accueil |
 | `admins` | Admins | identifiant de compte |
+| `contrats` | FA, refuges | texte du contrat figé (identité et adresse de la FA, refuge, animal, modalités de remise), empreinte SHA-256, nom saisi, date, IP et navigateur de chaque signataire |
 | `journal_acces` | Tous (y compris personnes sans compte : e-mail saisi lors d'une tentative de connexion) | événement, date, compte, e-mail, rôle, cible consultée, IP, navigateur |
 | `reinitialisations_mdp` | FA, refuges | empreinte du jeton de réinitialisation (jamais le jeton), expiration, IP de la demande |
 | `jetons_blocage` | FA, refuges | empreinte du jeton « Ce n'était pas moi », expiration |
@@ -45,6 +46,7 @@ Légende : ✅ en place · 🟡 décidé, en cours de construction · ⬜ à dé
 - ✅ Chaque utilisateur n'accède qu'à ses propres données (refuge → ses animaux et matchs ; FA → son dossier et ses propositions).
 - ✅ Une FA ne voit une proposition qu'après validation par le refuge ; les coordonnées du refuge ne lui sont transmises qu'après acceptation ; le numéro de puce ne lui est jamais transmis.
 - ✅ Un refuge ne voit des FA proposées que prénom, ville, code postal et critères (logement, expérience, disponibilité, note) ; jamais nom de famille, e-mail, téléphone ni adresse.
+- ✅ Coordonnées de la famille (nom, téléphone, e-mail, adresse) transmises au refuge **uniquement après acceptation** de la proposition par la famille ; coordonnées du référent du refuge transmises à la famille au même moment (décision DPO du 29/10/2026 : échanges directs, pas de messagerie PetIA).
 - ✅ Annuaire des familles (décision DPO du 29/10/2026) : un refuge **validé** voit toutes les familles au dossier validé, même sans match, avec les mêmes données réduites (prénom, ville, code postal, logement, espèces acceptées, foyer, disponibilité, nombre d'accueils, note) ; chaque consultation est journalisée, alerte admin au-delà de 30 consultations en une heure.
 - ✅ Refuges : validation obligatoire par l'admin avant de publier des animaux ; SIRET contrôlé (14 chiffres + clé de Luhn) et vérifiable dans l'annuaire officiel des entreprises.
 - ✅ Familles : dossier validé par l'admin avant toute proposition.
@@ -131,6 +133,15 @@ Légende : ✅ en place · 🟡 décidé, en cours de construction · ⬜ à dé
   - suppression en une fois, après saisie de l'e-mail de la personne : compte, dossier, matchs, évaluations, animaux, et anonymisation du journal ;
   - chaque opération DPO est tracée (sans donnée personnelle de la personne supprimée).
 - ⬜ Procédure de réponse aux demandes (délai d'un mois) à formaliser.
+
+## 9 bis. Contrat d'accueil et signature électronique
+
+- ✅ Contrat généré automatiquement quand la famille accepte une proposition, à partir d'un **modèle provisoire** (texte à valider par la DPO / juriste).
+- ✅ Texte figé à la génération, empreinte SHA-256 conservée et vérifiée avant chaque signature ; PDF téléchargeable par les deux parties avec l'empreinte et le détail des signatures.
+- ✅ Signature électronique simple (eIDAS) : lecture jusqu'au bout obligatoire, 4 déclarations à cocher (famille), nom saisi (contrôlé pour la famille), mot de passe du compte + code Google Authenticator si activé ; date, heure, IP et navigateur conservés.
+- ✅ Ordre : la famille signe, le refuge est notifié (bandeau « À faire » + e-mail) et contresigne ; l'arrivée de l'animal ne peut être confirmée qu'une fois le contrat signé par les deux parties.
+- ⬜ Code de confirmation par e-mail à ajouter quand Brevo sera débloqué.
+- ⬜ **Durée de conservation des contrats** à décider : aujourd'hui supprimés avec le compte (cascade) ; une conservation probatoire (ex. 5 ans, prescription civile) pourrait être justifiée.
 
 ## 10. Intelligence artificielle
 

@@ -408,6 +408,7 @@ async function inventaire(id) {
     administrateur: await estAdminId(id),
     famille_accueil: null, refuge: null, matchs: [], animaux: [], evaluations: [], journal: { total: 0, lignes: [] },
     jetons: { reinitialisation_mdp: 0, blocage: 0 },
+    contrats: [],
   };
   const { data: fa } = await supabaseAdmin.from('familles_accueil').select('*').eq('id', id).maybeSingle();
   if (fa) {
@@ -426,6 +427,16 @@ async function inventaire(id) {
     inv.animaux = an || [];
     const { data: ev } = await supabaseAdmin.from('evaluations').select('*').eq('refuge_id_eval', id);
     inv.evaluations = inv.evaluations.concat(ev || []);
+  }
+  // Contrats d'accueil (via les matchs de la famille ou des animaux du refuge)
+  let matchIds = inv.matchs.map(m => m.id);
+  if (ref && inv.animaux.length) {
+    const { data: mr } = await supabaseAdmin.from('matchs').select('id').in('animal_id', inv.animaux.map(a => a.id));
+    matchIds = matchIds.concat((mr || []).map(m => m.id));
+  }
+  if (matchIds.length) {
+    const { data: cs } = await supabaseAdmin.from('contrats').select('id, match_id, statut, version_modele, empreinte, cree_le, fa_signe_le, fa_nom_signe, refuge_signe_le, refuge_nom_signe').in('match_id', matchIds);
+    inv.contrats = cs || [];
   }
   const email = (user?.email || fa?.email || ref?.email || '').toLowerCase();
   const filtre = email ? `user_id.eq.${id},email.eq."${email.replace(/["\\,()]/g, '')}"` : `user_id.eq.${id}`;

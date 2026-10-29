@@ -138,6 +138,9 @@ router.get('/propositions', requireFamille, async (req, res) => {
       .in('statut', ['accepte', 'en_cours', 'termine'])
       .order('updated_at', { ascending: false });
     if (error) throw error;
+    const ids = (data || []).map(m => m.id);
+    const { data: cs } = ids.length ? await supabaseAdmin.from('contrats').select('match_id, statut, fa_signe_le, refuge_signe_le').in('match_id', ids) : { data: [] };
+    const contrats = Object.fromEntries((cs || []).map(c => [c.match_id, c]));
     // Les animaux d'un refuge suspendu ou refusé n'apparaissent plus
     const propositions = (data || []).filter(m => m.animal?.refuge?.statut === 'actif' && !m.animal.refuge.cloture_le && !m.animal.refuge.bloque_le).map(m => {
       if (m.animal?.refuge) { delete m.animal.refuge.statut; delete m.animal.refuge.cloture_le; delete m.animal.refuge.bloque_le; }
@@ -147,7 +150,7 @@ router.get('/propositions', requireFamille, async (req, res) => {
       }
       // Coordonnées du refuge seulement une fois la proposition acceptée
       if (m.animal?.refuge && m.reponse_fa !== 'oui') CONTACT_REFUGE.forEach(k => delete m.animal.refuge[k]);
-      return { ...m, resume_ia: m.details_score?.resume_ia || null, details_score: undefined };
+      return { ...m, resume_ia: m.details_score?.resume_ia || null, details_score: undefined, contrat: contrats[m.id] || null };
     });
     return res.json({ propositions });
   } catch (e) {
@@ -170,10 +173,98 @@ router.patch('/propositions/:id', requireFamille, async (req, res) => {
       .update({ reponse_fa: reponse, date_reponse_fa: maintenant, updated_at: maintenant }).eq('id', m.id);
     if (error) throw error;
     journaliser(req, { evenement: 'proposition_' + reponse, user: req.user, role: 'fa', cible_type: 'match', cible_id: m.id });
+    // Acceptation : le contrat est préparé tout de suite, la famille le signe dans la foulée
+    if (reponse === 'oui') {
+      await obtenirContrat(m.id).catch(e => console.error('Création contrat:', e.message));
+      notifierRefuge(m.id, 'acceptation').catch(() => {});
+    }
     return res.json({ message: reponse === 'oui' ? 'Proposition acceptée.' : 'Proposition déclinée.', reponse_fa: reponse });
   } catch (e) {
     console.error('PATCH /fa/propositions error:', e);
     return res.status(500).json({ message: 'Erreur serveur.' });
+  }
+});
+
+// ═══ CONTRAT D'ACCUEIL (famille) ═════════════════════════════════════════════
+const { obtenirContrat, pourAffichage, integre, pdf, CONFIRMATIONS_FA, authentifierSignataire, normaliserNom } = require('../services/contrat');
+
+async function matchDeLaFamille(matchId, famId) {
+  const { data: m } = await supabaseAdmin.from('matchs').select('id, famille_id, statut, reponse_fa').eq('id', matchId).maybeSingle();
+  return m && m.famille_id === famId ? m : null;
+}
+
+// E-mail au refuge (sans bloquer si Brevo est indisponible)
+async function notifierRefuge(matchId, quoi) {
+  const { envoyerMail, SITE, esc } = require('../services/journal');
+  const { data: m } = await supabaseAdmin.from('matchs')
+    .select('famille:familles_accueil(prenom), animal:animaux(nom, refuge:refuges(email, nom))').eq('id', matchId).maybeSingle();
+  const r = m?.animal?.refuge; if (!r?.email) return;
+  const txt = {
+    acceptation: [`${esc(m.famille?.prenom || 'La famille')} accepte d'accueillir ${esc(m.animal.nom)}`, 'La famille a accepté votre proposition. Elle va signer le contrat d\'accueil ; vous serez prévenu pour le contresigner.'],
+    signature: [`Contrat à contresigner pour ${esc(m.animal.nom)}`, `${esc(m.famille?.prenom || 'La famille')} a signé le contrat d'accueil. Contresignez-le depuis les Matchs de l'animal pour pouvoir confirmer son arrivée.`],
+  }[quoi];
+  await envoyerMail({ to: r.email, subject: '🐾 ' + txt[0].replace(/<[^>]+>/g, ''), badge: '📝', couleur: '#4F72F5', label: 'Accueil', title: txt[0], body: txt[1], ctaText: 'Ouvrir mon espace →', ctaHref: SITE });
+}
+
+router.get('/contrats/:matchId', requireFamille, async (req, res) => {
+  try {
+    const m = await matchDeLaFamille(req.params.matchId, req.famId);
+    if (!m) return res.status(404).json({ message: 'Proposition introuvable.' });
+    const c = await obtenirContrat(m.id);
+    if (!c) return res.status(409).json({ message: 'Le contrat est disponible une fois la proposition acceptée.' });
+    journaliser(req, { evenement: 'contrat_consulte', user: req.user, role: 'fa', cible_type: 'contrat', cible_id: c.id });
+    return res.json({ contrat: pourAffichage(c) });
+  } catch (e) {
+    console.error('GET /fa/contrats error:', e);
+    return res.status(500).json({ message: 'Erreur serveur.' });
+  }
+});
+
+// { nom, mot_de_passe, code?, confirmations: [true, true, true, true] }
+router.post('/contrats/:matchId/signer', requireFamille, async (req, res) => {
+  try {
+    const m = await matchDeLaFamille(req.params.matchId, req.famId);
+    if (!m) return res.status(404).json({ message: 'Proposition introuvable.' });
+    const c = await obtenirContrat(m.id);
+    if (!c) return res.status(409).json({ message: 'Contrat indisponible.' });
+    if (c.statut !== 'a_signer_fa') return res.status(409).json({ message: 'Vous avez déjà signé ce contrat.' });
+    if (!integre(c)) return res.status(409).json({ message: 'Le contrat a été altéré : contactez PetIA.' });
+    const conf = req.body?.confirmations;
+    if (!Array.isArray(conf) || conf.length !== CONFIRMATIONS_FA.length || !conf.every(x => x === true))
+      return res.status(400).json({ message: 'Cochez toutes les déclarations.' });
+    const { data: f } = await supabaseAdmin.from('familles_accueil').select('prenom, nom').eq('id', req.famId).single();
+    const saisi = normaliserNom(req.body?.nom);
+    if (!saisi || ![normaliserNom(f.prenom + f.nom), normaliserNom(f.nom + f.prenom)].includes(saisi))
+      return res.status(400).json({ message: `Saisissez vos prénom et nom tels qu'ils figurent au contrat : ${f.prenom} ${f.nom}.` });
+    const erreur = await authentifierSignataire(req.user, req.body?.mot_de_passe, req.body?.code);
+    if (erreur) {
+      journaliser(req, { evenement: 'contrat_signature_echec', user: req.user, role: 'fa', cible_type: 'contrat', cible_id: c.id });
+      return res.status(401).json({ message: erreur });
+    }
+    const { error } = await supabaseAdmin.from('contrats').update({
+      statut: 'a_signer_refuge', fa_signe_le: new Date().toISOString(), fa_nom_signe: String(req.body.nom).trim().slice(0, 120),
+      fa_ip: req.ipClient || req.ip, fa_appareil: String(req.headers['user-agent'] || '').slice(0, 300),
+    }).eq('id', c.id).eq('statut', 'a_signer_fa');
+    if (error) throw error;
+    journaliser(req, { evenement: 'contrat_signe_fa', user: req.user, role: 'fa', cible_type: 'contrat', cible_id: c.id });
+    notifierRefuge(m.id, 'signature').catch(() => {});
+    return res.json({ message: 'Contrat signé. Le refuge est prévenu et va le contresigner.' });
+  } catch (e) {
+    console.error('POST /fa/contrats/signer error:', e);
+    return res.status(500).json({ message: 'Erreur serveur.' });
+  }
+});
+
+router.get('/contrats/:matchId/pdf', requireFamille, async (req, res) => {
+  try {
+    const m = await matchDeLaFamille(req.params.matchId, req.famId);
+    const c = m && await obtenirContrat(m.id, { creer: false });
+    if (!c) return res.status(404).json({ message: 'Contrat introuvable.' });
+    journaliser(req, { evenement: 'contrat_telecharge', user: req.user, role: 'fa', cible_type: 'contrat', cible_id: c.id });
+    return pdf(c, res);
+  } catch (e) {
+    console.error('GET /fa/contrats/pdf error:', e);
+    if (!res.headersSent) res.status(500).json({ message: 'Erreur serveur.' });
   }
 });
 
