@@ -409,6 +409,7 @@ async function inventaire(id) {
     famille_accueil: null, refuge: null, matchs: [], animaux: [], evaluations: [], journal: { total: 0, lignes: [] },
     jetons: { reinitialisation_mdp: 0, blocage: 0 },
     contrats: [],
+    notes_suivi: [],
   };
   const { data: fa } = await supabaseAdmin.from('familles_accueil').select('*').eq('id', id).maybeSingle();
   if (fa) {
@@ -437,6 +438,14 @@ async function inventaire(id) {
   if (matchIds.length) {
     const { data: cs } = await supabaseAdmin.from('contrats').select('id, match_id, statut, version_modele, empreinte, cree_le, fa_signe_le, fa_nom_signe, refuge_signe_le, refuge_nom_signe').in('match_id', matchIds);
     inv.contrats = cs || [];
+    // Commentaires de suivi liés aux accueils de la personne (ou rédigés par son refuge)
+    const { data: ns } = await supabaseAdmin.from('suivi_notes').select('id, animal_id, match_id, texte, cree_le').in('match_id', matchIds);
+    inv.notes_suivi = ns || [];
+  }
+  if (ref && inv.animaux.length) {
+    const { data: nr } = await supabaseAdmin.from('suivi_notes').select('id, animal_id, match_id, texte, cree_le').in('animal_id', inv.animaux.map(a => a.id));
+    const deja = new Set(inv.notes_suivi.map(n => n.id));
+    inv.notes_suivi = inv.notes_suivi.concat((nr || []).filter(n => !deja.has(n.id)));
   }
   const email = (user?.email || fa?.email || ref?.email || '').toLowerCase();
   const filtre = email ? `user_id.eq.${id},email.eq."${email.replace(/["\\,()]/g, '')}"` : `user_id.eq.${id}`;

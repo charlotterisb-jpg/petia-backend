@@ -32,6 +32,7 @@ Légende : ✅ en place · 🟡 décidé, en cours de construction · ⬜ à dé
 | `animaux` | — (animaux) | fiche animal ; numéro de puce |
 | `matchs` | FA (indirect) | score, recommandation, réponse de la FA, dates d'accueil |
 | `admins` | Admins | identifiant de compte |
+| `suivi_notes` | FA (indirect), refuges | commentaires datés du refuge sur un animal, éventuellement liés à un accueil (peuvent mentionner la famille) |
 | `contrats` | FA, refuges | texte du contrat figé (identité et adresse de la FA, refuge, animal, modalités de remise), empreinte SHA-256, nom saisi, date, IP et navigateur de chaque signataire |
 | `journal_acces` | Tous (y compris personnes sans compte : e-mail saisi lors d'une tentative de connexion) | événement, date, compte, e-mail, rôle, cible consultée, IP, navigateur |
 | `reinitialisations_mdp` | FA, refuges | empreinte du jeton de réinitialisation (jamais le jeton), expiration, IP de la demande |
