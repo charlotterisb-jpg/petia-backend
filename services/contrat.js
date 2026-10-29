@@ -14,7 +14,7 @@ const PDFDocument = require('pdfkit');
 const { createClient } = require('@supabase/supabase-js');
 
 const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_KEY);
-const VERSION_MODELE = 'provisoire-2026-10-29b';
+const VERSION_MODELE = 'provisoire-2026-10-29c';
 
 const CONFIRMATIONS_FA = [
   "J'ai lu et compris l'intégralité du contrat de famille d'accueil.",
@@ -91,7 +91,7 @@ function rediger({ refuge: r, famille: f, animal: a, match: m }) {
         "Les données de la Famille d'Accueil sont traitées par l'Association pour la gestion de l'accueil, et par PetIA pour la mise en relation et la conservation du présent contrat, conformément au RGPD. Droits d'accès, de rectification et d'effacement : contact@petia.fr.",
       ] },
       { titre: 'Article 9 — Signature électronique', paragraphes: [
-        "Les parties signent électroniquement sur PetIA (signature électronique simple au sens du règlement eIDAS n° 910/2014). Chaque signature est authentifiée par le mot de passe du compte, et par le code Google Authenticator lorsque la double authentification est activée. La date, l'heure, l'adresse IP et le navigateur de chaque signataire sont conservés avec l'empreinte numérique (SHA-256) du texte signé.",
+        "Les parties signent électroniquement sur PetIA (signature électronique simple au sens du règlement eIDAS n° 910/2014). Chaque signature est authentifiée par deux facteurs : le mot de passe du compte et un code à usage unique généré par l'application Google Authenticator du signataire. La date, l'heure, l'adresse IP et le navigateur de chaque signataire sont conservés avec l'empreinte numérique (SHA-256) du texte signé.",
       ] },
     ],
     confirmations_fa: CONFIRMATIONS_FA,
@@ -177,12 +177,12 @@ async function authentifierSignataire(user, motDePasse, code) {
   if (!motDePasse) return 'Saisissez votre mot de passe pour signer.';
   const { data, error } = await clientEphemere().auth.signInWithPassword({ email: user.email, password: motDePasse });
   if (error || !data?.session) return 'Mot de passe incorrect.';
+  // Double authentification OBLIGATOIRE pour signer : un mot de passe volé ne suffit pas
   const facteur = facteursActifs(user)[0];
-  if (facteur) {
-    if (!code) return 'Saisissez le code Google Authenticator.';
-    try { await verifierCode(data.session.access_token, facteur.id, code); }
-    catch { return 'Code Google Authenticator incorrect ou expiré.'; }
-  }
+  if (!facteur) return 'Pour signer, activez d\'abord la double authentification (Google Authenticator) dans l\'onglet Sécurité.';
+  if (!code) return 'Saisissez le code Google Authenticator.';
+  try { await verifierCode(data.session.access_token, facteur.id, code); }
+  catch { return 'Code Google Authenticator incorrect ou expiré.'; }
   await supabase.auth.admin.signOut(data.session.access_token, 'local').catch(() => {});
   return null;
 }
