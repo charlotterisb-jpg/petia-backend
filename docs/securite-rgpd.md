@@ -138,7 +138,7 @@ Légende : ✅ en place · 🟡 décidé, en cours de construction · ⬜ à dé
 
 - ✅ Contrat généré automatiquement quand la famille accepte une proposition, à partir d'un **modèle provisoire** (texte à valider par la DPO / juriste).
 - ✅ Texte figé à la génération, empreinte SHA-256 conservée et vérifiée avant chaque signature ; PDF téléchargeable par les deux parties avec l'empreinte et le détail des signatures.
-- ✅ Signature électronique simple (eIDAS) : lecture jusqu'au bout obligatoire, 4 déclarations à cocher (famille), nom saisi (contrôlé pour la famille), mot de passe du compte + code Google Authenticator si activé ; date, heure, IP et navigateur conservés.
+- ✅ Signature électronique simple (eIDAS) : lecture jusqu'au bout obligatoire, 3 déclarations à cocher (famille), nom saisi (contrôlé pour la famille), **double authentification obligatoire** (mot de passe du compte + code Google Authenticator : un mot de passe volé ne suffit pas à signer) ; date, heure, IP et navigateur conservés.
 - ✅ Ordre : la famille signe, le refuge est notifié (bandeau « À faire » + e-mail) et contresigne ; l'arrivée de l'animal ne peut être confirmée qu'une fois le contrat signé par les deux parties.
 - ⬜ Code de confirmation par e-mail à ajouter quand Brevo sera débloqué.
 - ⬜ **Durée de conservation des contrats** à décider : aujourd'hui supprimés avec le compte (cascade) ; une conservation probatoire (ex. 5 ans, prescription civile) pourrait être justifiée.
